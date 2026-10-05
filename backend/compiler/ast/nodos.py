@@ -52,3 +52,48 @@ class OperacionUnaria(Nodo):
 
     def __repr__(self):
         return f"({self.operador}{self.operando})"
+
+       
+# DECLARACIONES Y SENTENCIAS
+class DeclaracionVariable(Nodo):
+    def __init__(self, nombre, tipo, mutable, valor_inicial, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.nombre = nombre
+        self.tipo = tipo
+        self.mutable = mutable
+        self.valor_inicial = valor_inicial
+
+    def __repr__(self):
+        mut = "mut " if self.mutable else ""
+        return f"let {mut}{self.nombre}: {self.tipo} = {self.valor_inicial}"
+
+
+class Asignacion(Nodo):
+    def __init__(self, nombre, operador, valor, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.nombre = nombre
+        self.operador = operador
+        self.valor = valor
+
+    def __repr__(self):
+        return f"{self.nombre} {self.operador} {self.valor}"
+
+
+class Bloque(Nodo):
+    """Secuencia de sentencias entre llaves { }"""
+    def __init__(self, sentencias, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.sentencias = sentencias
+
+    def __repr__(self):
+        return f"Bloque({len(self.sentencias)} sentencias)"
+
+
+class LlamadaPrintln(Nodo):
+    def __init__(self, formato, argumentos, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.formato = formato
+        self.argumentos = argumentos
+
+    def __repr__(self):
+        return f'println!("{self.formato}", {self.argumentos})'

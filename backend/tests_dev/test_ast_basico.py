@@ -1,6 +1,5 @@
 from compiler.ast.nodos import Literal, Identificador, OperacionBinaria, OperacionUnaria
 
-# Simulamos el AST de: x + 5 * -2
 nodo = OperacionBinaria(
     izquierda=Identificador("x", linea=1, columna=1),
     operador="+",
