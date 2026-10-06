@@ -6,9 +6,9 @@ _tabversion = '3.10'
 
 _lr_method = 'LALR'
 
-_lr_signature = 'AMPER AND BREAK CHAR COMA CONTINUE CORCH_DER CORCH_IZQ DIFERENTE DIV DIV_IGUAL DOBLE_DOS_PUNTOS DOS_PUNTOS ELSE ETIQUETA FALSE FLECHA FLECHA_MATCH FN IDENTIFICADOR IF IGUAL IGUAL_IGUAL LET LLAVE_DER LLAVE_IZQ LOOP MAS MAS_IGUAL MATCH MAYORQUE MAYOR_IGUAL MENORQUE MENOR_IGUAL MENOS MENOS_IGUAL MODULO MODULO_IGUAL MULT MULT_IGUAL MUT NOT NUMERO_DECIMAL NUMERO_ENTERO OR PAREN_DER PAREN_IZQ PUNTO PUNTO_COMA RANGO RETURN STRING TIPO_BOOL TIPO_CHAR TIPO_F64 TIPO_I32 TIPO_STRING TRUE WHILEprograma : lista_funcioneslista_funciones : funcionlista_funciones : lista_funciones funcionfuncion : FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloquetipo_retorno_opt : FLECHA tipotipo_retorno_opt : emptylista_parametros_opt : lista_parametroslista_parametros_opt : emptylista_parametros : parametrolista_parametros : lista_parametros COMA parametroparametro : IDENTIFICADOR DOS_PUNTOS tipotipo : TIPO_I32\n| TIPO_F64\n| TIPO_BOOL\n| TIPO_CHAR\n| TIPO_STRINGbloque : LLAVE_IZQ LLAVE_DERempty :'
+_lr_signature = 'AMPER AND BREAK CHAR COMA CONTINUE CORCH_DER CORCH_IZQ DIFERENTE DIV DIV_IGUAL DOBLE_DOS_PUNTOS DOS_PUNTOS ELSE ETIQUETA FALSE FLECHA FLECHA_MATCH FN IDENTIFICADOR IF IGUAL IGUAL_IGUAL LET LLAVE_DER LLAVE_IZQ LOOP MAS MAS_IGUAL MATCH MAYORQUE MAYOR_IGUAL MENORQUE MENOR_IGUAL MENOS MENOS_IGUAL MODULO MODULO_IGUAL MULT MULT_IGUAL MUT NOT NUMERO_DECIMAL NUMERO_ENTERO OR PAREN_DER PAREN_IZQ PUNTO PUNTO_COMA RANGO RETURN STRING TIPO_BOOL TIPO_CHAR TIPO_F64 TIPO_I32 TIPO_STRING TRUE WHILEprograma : lista_funcioneslista_funciones : funcionlista_funciones : lista_funciones funcionfuncion : FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloquetipo_retorno_opt : FLECHA tipotipo_retorno_opt : emptylista_parametros_opt : lista_parametroslista_parametros_opt : emptylista_parametros : parametrolista_parametros : lista_parametros COMA parametroparametro : IDENTIFICADOR DOS_PUNTOS tipotipo : TIPO_I32\n| TIPO_F64\n| TIPO_BOOL\n| TIPO_CHAR\n| TIPO_STRINGbloque : LLAVE_IZQ lista_sentencias_opt LLAVE_DERlista_sentencias_opt : lista_sentenciaslista_sentencias_opt : emptylista_sentencias : sentencialista_sentencias : lista_sentencias sentenciasentencia : declaracion_variable\n| asignacion\n| error PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR PUNTO_COMAmut_opt : MUTmut_opt : emptyasignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMAexpresion : NUMERO_ENTEROexpresion : NUMERO_DECIMALexpresion : STRINGexpresion : TRUEexpresion : FALSEexpresion : IDENTIFICADORempty :'
     
-_lr_action_items = {'FN':([0,2,3,5,26,29,],[4,4,-2,-3,-4,-17,]),'$end':([1,2,3,5,26,29,],[0,-1,-2,-3,-4,-17,]),'IDENTIFICADOR':([4,7,15,],[6,8,8,]),'PAREN_IZQ':([6,],[7,]),'PAREN_DER':([7,9,10,11,12,16,17,18,19,20,21,25,],[-18,14,-7,-8,-9,-11,-12,-13,-14,-15,-16,-10,]),'DOS_PUNTOS':([8,],[13,]),'COMA':([10,12,16,17,18,19,20,21,25,],[15,-9,-11,-12,-13,-14,-15,-16,-10,]),'TIPO_I32':([13,23,],[17,17,]),'TIPO_F64':([13,23,],[18,18,]),'TIPO_BOOL':([13,23,],[19,19,]),'TIPO_CHAR':([13,23,],[20,20,]),'TIPO_STRING':([13,23,],[21,21,]),'FLECHA':([14,],[23,]),'LLAVE_IZQ':([14,17,18,19,20,21,22,24,28,],[-18,-12,-13,-14,-15,-16,27,-6,-5,]),'LLAVE_DER':([27,],[29,]),}
+_lr_action_items = {'FN':([0,2,3,5,26,38,],[4,4,-2,-3,-4,-17,]),'$end':([1,2,3,5,26,38,],[0,-1,-2,-3,-4,-17,]),'IDENTIFICADOR':([4,7,15,27,30,32,33,34,36,39,40,41,42,43,44,54,55,56,59,60,61,63,],[6,8,8,37,37,-20,-22,-23,-38,-21,-24,45,-29,-30,46,46,-28,-31,46,-27,-26,-25,]),'PAREN_IZQ':([6,],[7,]),'PAREN_DER':([7,9,10,11,12,16,17,18,19,20,21,25,],[-38,14,-7,-8,-9,-11,-12,-13,-14,-15,-16,-10,]),'DOS_PUNTOS':([8,45,],[13,53,]),'COMA':([10,12,16,17,18,19,20,21,25,],[15,-9,-11,-12,-13,-14,-15,-16,-10,]),'TIPO_I32':([13,23,53,],[17,17,17,]),'TIPO_F64':([13,23,53,],[18,18,18,]),'TIPO_BOOL':([13,23,53,],[19,19,19,]),'TIPO_CHAR':([13,23,53,],[20,20,20,]),'TIPO_STRING':([13,23,53,],[21,21,21,]),'FLECHA':([14,],[23,]),'LLAVE_IZQ':([14,17,18,19,20,21,22,24,28,],[-38,-12,-13,-14,-15,-16,27,-6,-5,]),'IGUAL':([17,18,19,20,21,37,45,57,],[-12,-13,-14,-15,-16,44,54,59,]),'PUNTO_COMA':([17,18,19,20,21,35,45,46,47,48,49,50,51,52,57,58,62,],[-12,-13,-14,-15,-16,40,55,-37,56,-32,-33,-34,-35,-36,60,61,63,]),'LLAVE_DER':([27,29,30,31,32,33,34,39,40,55,56,60,61,63,],[-38,38,-18,-19,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'error':([27,30,32,33,34,39,40,55,56,60,61,63,],[35,35,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'LET':([27,30,32,33,34,39,40,55,56,60,61,63,],[36,36,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'MUT':([36,],[42,]),'NUMERO_ENTERO':([44,54,59,],[48,48,48,]),'NUMERO_DECIMAL':([44,54,59,],[49,49,49,]),'STRING':([44,54,59,],[50,50,50,]),'TRUE':([44,54,59,],[51,51,51,]),'FALSE':([44,54,59,],[52,52,52,]),}
 
 _lr_action = {}
 for _k, _v in _lr_action_items.items():
@@ -17,7 +17,7 @@ for _k, _v in _lr_action_items.items():
       _lr_action[_x][_k] = _y
 del _lr_action_items
 
-_lr_goto_items = {'programa':([0,],[1,]),'lista_funciones':([0,],[2,]),'funcion':([0,2,],[3,5,]),'lista_parametros_opt':([7,],[9,]),'lista_parametros':([7,],[10,]),'empty':([7,14,],[11,24,]),'parametro':([7,15,],[12,25,]),'tipo':([13,23,],[16,28,]),'tipo_retorno_opt':([14,],[22,]),'bloque':([22,],[26,]),}
+_lr_goto_items = {'programa':([0,],[1,]),'lista_funciones':([0,],[2,]),'funcion':([0,2,],[3,5,]),'lista_parametros_opt':([7,],[9,]),'lista_parametros':([7,],[10,]),'empty':([7,14,27,36,],[11,24,31,43,]),'parametro':([7,15,],[12,25,]),'tipo':([13,23,53,],[16,28,57,]),'tipo_retorno_opt':([14,],[22,]),'bloque':([22,],[26,]),'lista_sentencias_opt':([27,],[29,]),'lista_sentencias':([27,],[30,]),'sentencia':([27,30,],[32,39,]),'declaracion_variable':([27,30,],[33,33,]),'asignacion':([27,30,],[34,34,]),'mut_opt':([36,],[41,]),'expresion':([44,54,59,],[47,58,62,]),}
 
 _lr_goto = {}
 for _k, _v in _lr_goto_items.items():
@@ -27,22 +27,42 @@ for _k, _v in _lr_goto_items.items():
 del _lr_goto_items
 _lr_productions = [
   ("S' -> programa","S'",1,None,None,None),
-  ('programa -> lista_funciones','programa',1,'p_programa','parser.py',9),
-  ('lista_funciones -> funcion','lista_funciones',1,'p_lista_funciones_una','parser.py',14),
-  ('lista_funciones -> lista_funciones funcion','lista_funciones',2,'p_lista_funciones_varias','parser.py',19),
-  ('funcion -> FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloque','funcion',7,'p_funcion','parser.py',25),
-  ('tipo_retorno_opt -> FLECHA tipo','tipo_retorno_opt',2,'p_tipo_retorno_opt_con','parser.py',36),
-  ('tipo_retorno_opt -> empty','tipo_retorno_opt',1,'p_tipo_retorno_opt_vacio','parser.py',41),
-  ('lista_parametros_opt -> lista_parametros','lista_parametros_opt',1,'p_lista_parametros_opt_con','parser.py',46),
-  ('lista_parametros_opt -> empty','lista_parametros_opt',1,'p_lista_parametros_opt_vacio','parser.py',51),
-  ('lista_parametros -> parametro','lista_parametros',1,'p_lista_parametros_una','parser.py',56),
-  ('lista_parametros -> lista_parametros COMA parametro','lista_parametros',3,'p_lista_parametros_varias','parser.py',61),
-  ('parametro -> IDENTIFICADOR DOS_PUNTOS tipo','parametro',3,'p_parametro','parser.py',66),
-  ('tipo -> TIPO_I32','tipo',1,'p_tipo','parser.py',71),
-  ('tipo -> TIPO_F64','tipo',1,'p_tipo','parser.py',72),
-  ('tipo -> TIPO_BOOL','tipo',1,'p_tipo','parser.py',73),
-  ('tipo -> TIPO_CHAR','tipo',1,'p_tipo','parser.py',74),
-  ('tipo -> TIPO_STRING','tipo',1,'p_tipo','parser.py',75),
-  ('bloque -> LLAVE_IZQ LLAVE_DER','bloque',2,'p_bloque','parser.py',80),
-  ('empty -> <empty>','empty',0,'p_empty','parser.py',84),
+  ('programa -> lista_funciones','programa',1,'p_programa','parser.py',11),
+  ('lista_funciones -> funcion','lista_funciones',1,'p_lista_funciones_una','parser.py',16),
+  ('lista_funciones -> lista_funciones funcion','lista_funciones',2,'p_lista_funciones_varias','parser.py',21),
+  ('funcion -> FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloque','funcion',7,'p_funcion','parser.py',27),
+  ('tipo_retorno_opt -> FLECHA tipo','tipo_retorno_opt',2,'p_tipo_retorno_opt_con','parser.py',38),
+  ('tipo_retorno_opt -> empty','tipo_retorno_opt',1,'p_tipo_retorno_opt_vacio','parser.py',43),
+  ('lista_parametros_opt -> lista_parametros','lista_parametros_opt',1,'p_lista_parametros_opt_con','parser.py',48),
+  ('lista_parametros_opt -> empty','lista_parametros_opt',1,'p_lista_parametros_opt_vacio','parser.py',53),
+  ('lista_parametros -> parametro','lista_parametros',1,'p_lista_parametros_una','parser.py',58),
+  ('lista_parametros -> lista_parametros COMA parametro','lista_parametros',3,'p_lista_parametros_varias','parser.py',63),
+  ('parametro -> IDENTIFICADOR DOS_PUNTOS tipo','parametro',3,'p_parametro','parser.py',68),
+  ('tipo -> TIPO_I32','tipo',1,'p_tipo','parser.py',73),
+  ('tipo -> TIPO_F64','tipo',1,'p_tipo','parser.py',74),
+  ('tipo -> TIPO_BOOL','tipo',1,'p_tipo','parser.py',75),
+  ('tipo -> TIPO_CHAR','tipo',1,'p_tipo','parser.py',76),
+  ('tipo -> TIPO_STRING','tipo',1,'p_tipo','parser.py',77),
+  ('bloque -> LLAVE_IZQ lista_sentencias_opt LLAVE_DER','bloque',3,'p_bloque','parser.py',83),
+  ('lista_sentencias_opt -> lista_sentencias','lista_sentencias_opt',1,'p_lista_sentencias_opt_con','parser.py',88),
+  ('lista_sentencias_opt -> empty','lista_sentencias_opt',1,'p_lista_sentencias_opt_vacio','parser.py',93),
+  ('lista_sentencias -> sentencia','lista_sentencias',1,'p_lista_sentencias_una','parser.py',98),
+  ('lista_sentencias -> lista_sentencias sentencia','lista_sentencias',2,'p_lista_sentencias_varias','parser.py',103),
+  ('sentencia -> declaracion_variable','sentencia',1,'p_sentencia','parser.py',108),
+  ('sentencia -> asignacion','sentencia',1,'p_sentencia','parser.py',109),
+  ('sentencia -> error PUNTO_COMA','sentencia',2,'p_sentencia','parser.py',110),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMA','declaracion_variable',8,'p_declaracion_variable_con_tipo_y_valor','parser.py',118),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_valor','parser.py',126),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_tipo','parser.py',134),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR PUNTO_COMA','declaracion_variable',4,'p_declaracion_variable_sin_nada','parser.py',142),
+  ('mut_opt -> MUT','mut_opt',1,'p_mut_opt_con','parser.py',150),
+  ('mut_opt -> empty','mut_opt',1,'p_mut_opt_vacio','parser.py',155),
+  ('asignacion -> IDENTIFICADOR IGUAL expresion PUNTO_COMA','asignacion',4,'p_asignacion','parser.py',162),
+  ('expresion -> NUMERO_ENTERO','expresion',1,'p_expresion_numero_entero','parser.py',168),
+  ('expresion -> NUMERO_DECIMAL','expresion',1,'p_expresion_numero_decimal','parser.py',173),
+  ('expresion -> STRING','expresion',1,'p_expresion_string','parser.py',178),
+  ('expresion -> TRUE','expresion',1,'p_expresion_true','parser.py',183),
+  ('expresion -> FALSE','expresion',1,'p_expresion_false','parser.py',188),
+  ('expresion -> IDENTIFICADOR','expresion',1,'p_expresion_identificador','parser.py',193),
+  ('empty -> <empty>','empty',0,'p_empty','parser.py',197),
 ]
