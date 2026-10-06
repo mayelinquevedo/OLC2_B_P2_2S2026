@@ -6,9 +6,9 @@ _tabversion = '3.10'
 
 _lr_method = 'LALR'
 
-_lr_signature = 'AMPER AND BREAK CHAR COMA CONTINUE CORCH_DER CORCH_IZQ DIFERENTE DIV DIV_IGUAL DOBLE_DOS_PUNTOS DOS_PUNTOS ELSE ETIQUETA FALSE FLECHA FLECHA_MATCH FN IDENTIFICADOR IF IGUAL IGUAL_IGUAL LET LLAVE_DER LLAVE_IZQ LOOP MAS MAS_IGUAL MATCH MAYORQUE MAYOR_IGUAL MENORQUE MENOR_IGUAL MENOS MENOS_IGUAL MODULO MODULO_IGUAL MULT MULT_IGUAL MUT NOT NUMERO_DECIMAL NUMERO_ENTERO OR PAREN_DER PAREN_IZQ PUNTO PUNTO_COMA RANGO RETURN STRING TIPO_BOOL TIPO_CHAR TIPO_F64 TIPO_I32 TIPO_STRING TRUE WHILEprograma : lista_funcioneslista_funciones : funcionlista_funciones : lista_funciones funcionfuncion : FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloquetipo_retorno_opt : FLECHA tipotipo_retorno_opt : emptylista_parametros_opt : lista_parametroslista_parametros_opt : emptylista_parametros : parametrolista_parametros : lista_parametros COMA parametroparametro : IDENTIFICADOR DOS_PUNTOS tipotipo : TIPO_I32\n| TIPO_F64\n| TIPO_BOOL\n| TIPO_CHAR\n| TIPO_STRINGbloque : LLAVE_IZQ lista_sentencias_opt LLAVE_DERlista_sentencias_opt : lista_sentenciaslista_sentencias_opt : emptylista_sentencias : sentencialista_sentencias : lista_sentencias sentenciasentencia : declaracion_variable\n| asignacion\n| error PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR PUNTO_COMAmut_opt : MUTmut_opt : emptyasignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMAexpresion : NUMERO_ENTEROexpresion : NUMERO_DECIMALexpresion : STRINGexpresion : TRUEexpresion : FALSEexpresion : IDENTIFICADORempty :'
+_lr_signature = 'leftORleftANDleftIGUAL_IGUALDIFERENTEleftMAYORQUEMENORQUEMAYOR_IGUALMENOR_IGUALleftMASMENOSleftMULTDIVMODULOrightNOTUMENOSAMPER AND BREAK CHAR COMA CONTINUE CORCH_DER CORCH_IZQ DIFERENTE DIV DIV_IGUAL DOBLE_DOS_PUNTOS DOS_PUNTOS ELSE ETIQUETA FALSE FLECHA FLECHA_MATCH FN IDENTIFICADOR IF IGUAL IGUAL_IGUAL LET LLAVE_DER LLAVE_IZQ LOOP MAS MAS_IGUAL MATCH MAYORQUE MAYOR_IGUAL MENORQUE MENOR_IGUAL MENOS MENOS_IGUAL MODULO MODULO_IGUAL MULT MULT_IGUAL MUT NOT NUMERO_DECIMAL NUMERO_ENTERO OR PAREN_DER PAREN_IZQ PUNTO PUNTO_COMA RANGO RETURN STRING TIPO_BOOL TIPO_CHAR TIPO_F64 TIPO_I32 TIPO_STRING TRUE WHILEprograma : lista_funcioneslista_funciones : funcionlista_funciones : lista_funciones funcionfuncion : FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloquetipo_retorno_opt : FLECHA tipotipo_retorno_opt : emptylista_parametros_opt : lista_parametroslista_parametros_opt : emptylista_parametros : parametrolista_parametros : lista_parametros COMA parametroparametro : IDENTIFICADOR DOS_PUNTOS tipotipo : TIPO_I32\n| TIPO_F64\n| TIPO_BOOL\n| TIPO_CHAR\n| TIPO_STRINGbloque : LLAVE_IZQ lista_sentencias_opt LLAVE_DERlista_sentencias_opt : lista_sentenciaslista_sentencias_opt : emptylista_sentencias : sentencialista_sentencias : lista_sentencias sentenciasentencia : declaracion_variable\n| asignacion\n| error PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMAdeclaracion_variable : LET mut_opt IDENTIFICADOR PUNTO_COMAmut_opt : MUTmut_opt : emptyasignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMAexpresion : expresion MAS expresion\n| expresion MENOS expresion\n| expresion MULT expresion\n| expresion DIV expresion\n| expresion MODULO expresion\n| expresion IGUAL_IGUAL expresion\n| expresion DIFERENTE expresion\n| expresion MAYORQUE expresion\n| expresion MENORQUE expresion\n| expresion MAYOR_IGUAL expresion\n| expresion MENOR_IGUAL expresion\n| expresion AND expresion\n| expresion OR expresionexpresion : MENOS expresion %prec UMENOSexpresion : NOT expresionexpresion : PAREN_IZQ expresion PAREN_DERexpresion : NUMERO_ENTEROexpresion : NUMERO_DECIMALexpresion : STRINGexpresion : CHARexpresion : TRUEexpresion : FALSEexpresion : IDENTIFICADORempty :'
     
-_lr_action_items = {'FN':([0,2,3,5,26,38,],[4,4,-2,-3,-4,-17,]),'$end':([1,2,3,5,26,38,],[0,-1,-2,-3,-4,-17,]),'IDENTIFICADOR':([4,7,15,27,30,32,33,34,36,39,40,41,42,43,44,54,55,56,59,60,61,63,],[6,8,8,37,37,-20,-22,-23,-38,-21,-24,45,-29,-30,46,46,-28,-31,46,-27,-26,-25,]),'PAREN_IZQ':([6,],[7,]),'PAREN_DER':([7,9,10,11,12,16,17,18,19,20,21,25,],[-38,14,-7,-8,-9,-11,-12,-13,-14,-15,-16,-10,]),'DOS_PUNTOS':([8,45,],[13,53,]),'COMA':([10,12,16,17,18,19,20,21,25,],[15,-9,-11,-12,-13,-14,-15,-16,-10,]),'TIPO_I32':([13,23,53,],[17,17,17,]),'TIPO_F64':([13,23,53,],[18,18,18,]),'TIPO_BOOL':([13,23,53,],[19,19,19,]),'TIPO_CHAR':([13,23,53,],[20,20,20,]),'TIPO_STRING':([13,23,53,],[21,21,21,]),'FLECHA':([14,],[23,]),'LLAVE_IZQ':([14,17,18,19,20,21,22,24,28,],[-38,-12,-13,-14,-15,-16,27,-6,-5,]),'IGUAL':([17,18,19,20,21,37,45,57,],[-12,-13,-14,-15,-16,44,54,59,]),'PUNTO_COMA':([17,18,19,20,21,35,45,46,47,48,49,50,51,52,57,58,62,],[-12,-13,-14,-15,-16,40,55,-37,56,-32,-33,-34,-35,-36,60,61,63,]),'LLAVE_DER':([27,29,30,31,32,33,34,39,40,55,56,60,61,63,],[-38,38,-18,-19,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'error':([27,30,32,33,34,39,40,55,56,60,61,63,],[35,35,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'LET':([27,30,32,33,34,39,40,55,56,60,61,63,],[36,36,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'MUT':([36,],[42,]),'NUMERO_ENTERO':([44,54,59,],[48,48,48,]),'NUMERO_DECIMAL':([44,54,59,],[49,49,49,]),'STRING':([44,54,59,],[50,50,50,]),'TRUE':([44,54,59,],[51,51,51,]),'FALSE':([44,54,59,],[52,52,52,]),}
+_lr_action_items = {'FN':([0,2,3,5,26,38,],[4,4,-2,-3,-4,-17,]),'$end':([1,2,3,5,26,38,],[0,-1,-2,-3,-4,-17,]),'IDENTIFICADOR':([4,7,15,27,30,32,33,34,36,39,40,41,42,43,44,48,49,50,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,93,94,95,97,],[6,8,8,37,37,-20,-22,-23,-55,-21,-24,45,-29,-30,46,46,46,46,46,-28,-31,46,46,46,46,46,46,46,46,46,46,46,46,46,46,-27,-26,-25,]),'PAREN_IZQ':([6,44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[7,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,50,]),'PAREN_DER':([7,9,10,11,12,16,17,18,19,20,21,25,46,51,52,53,54,55,56,74,75,76,79,80,81,82,83,84,85,86,87,88,89,90,91,92,],[-55,14,-7,-8,-9,-11,-12,-13,-14,-15,-16,-10,-54,-48,-49,-50,-51,-52,-53,-45,-46,92,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,-43,-44,-47,]),'DOS_PUNTOS':([8,45,],[13,57,]),'COMA':([10,12,16,17,18,19,20,21,25,],[15,-9,-11,-12,-13,-14,-15,-16,-10,]),'TIPO_I32':([13,23,57,],[17,17,17,]),'TIPO_F64':([13,23,57,],[18,18,18,]),'TIPO_BOOL':([13,23,57,],[19,19,19,]),'TIPO_CHAR':([13,23,57,],[20,20,20,]),'TIPO_STRING':([13,23,57,],[21,21,21,]),'FLECHA':([14,],[23,]),'LLAVE_IZQ':([14,17,18,19,20,21,22,24,28,],[-55,-12,-13,-14,-15,-16,27,-6,-5,]),'IGUAL':([17,18,19,20,21,37,45,77,],[-12,-13,-14,-15,-16,44,58,93,]),'PUNTO_COMA':([17,18,19,20,21,35,45,46,47,51,52,53,54,55,56,74,75,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-12,-13,-14,-15,-16,40,59,-54,60,-48,-49,-50,-51,-52,-53,-45,-46,94,95,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,-43,-44,-47,97,]),'LLAVE_DER':([27,29,30,31,32,33,34,39,40,59,60,94,95,97,],[-55,38,-18,-19,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'error':([27,30,32,33,34,39,40,59,60,94,95,97,],[35,35,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'LET':([27,30,32,33,34,39,40,59,60,94,95,97,],[36,36,-20,-22,-23,-21,-24,-28,-31,-27,-26,-25,]),'MUT':([36,],[42,]),'MENOS':([44,46,47,48,49,50,51,52,53,54,55,56,58,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,96,],[48,-54,62,48,48,48,-48,-49,-50,-51,-52,-53,48,48,48,48,48,48,48,48,48,48,48,48,48,48,-45,-46,62,62,-32,-33,-34,-35,-36,62,62,62,62,62,62,62,62,-47,48,62,]),'NOT':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,49,]),'NUMERO_ENTERO':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[51,51,51,51,51,51,51,51,51,51,51,51,51,51,51,51,51,51,51,]),'NUMERO_DECIMAL':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,52,]),'STRING':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[53,53,53,53,53,53,53,53,53,53,53,53,53,53,53,53,53,53,53,]),'CHAR':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,54,]),'TRUE':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,55,]),'FALSE':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,56,]),'MAS':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,61,-48,-49,-50,-51,-52,-53,-45,-46,61,61,-32,-33,-34,-35,-36,61,61,61,61,61,61,61,61,-47,61,]),'MULT':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,63,-48,-49,-50,-51,-52,-53,-45,-46,63,63,63,63,-34,-35,-36,63,63,63,63,63,63,63,63,-47,63,]),'DIV':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,64,-48,-49,-50,-51,-52,-53,-45,-46,64,64,64,64,-34,-35,-36,64,64,64,64,64,64,64,64,-47,64,]),'MODULO':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,65,-48,-49,-50,-51,-52,-53,-45,-46,65,65,65,65,-34,-35,-36,65,65,65,65,65,65,65,65,-47,65,]),'IGUAL_IGUAL':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,66,-48,-49,-50,-51,-52,-53,-45,-46,66,66,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,66,66,-47,66,]),'DIFERENTE':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,67,-48,-49,-50,-51,-52,-53,-45,-46,67,67,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,67,67,-47,67,]),'MAYORQUE':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,68,-48,-49,-50,-51,-52,-53,-45,-46,68,68,-32,-33,-34,-35,-36,68,68,-39,-40,-41,-42,68,68,-47,68,]),'MENORQUE':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,69,-48,-49,-50,-51,-52,-53,-45,-46,69,69,-32,-33,-34,-35,-36,69,69,-39,-40,-41,-42,69,69,-47,69,]),'MAYOR_IGUAL':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,70,-48,-49,-50,-51,-52,-53,-45,-46,70,70,-32,-33,-34,-35,-36,70,70,-39,-40,-41,-42,70,70,-47,70,]),'MENOR_IGUAL':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,71,-48,-49,-50,-51,-52,-53,-45,-46,71,71,-32,-33,-34,-35,-36,71,71,-39,-40,-41,-42,71,71,-47,71,]),'AND':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,72,-48,-49,-50,-51,-52,-53,-45,-46,72,72,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,-43,72,-47,72,]),'OR':([46,47,51,52,53,54,55,56,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,96,],[-54,73,-48,-49,-50,-51,-52,-53,-45,-46,73,73,-32,-33,-34,-35,-36,-37,-38,-39,-40,-41,-42,-43,-44,-47,73,]),}
 
 _lr_action = {}
 for _k, _v in _lr_action_items.items():
@@ -17,7 +17,7 @@ for _k, _v in _lr_action_items.items():
       _lr_action[_x][_k] = _y
 del _lr_action_items
 
-_lr_goto_items = {'programa':([0,],[1,]),'lista_funciones':([0,],[2,]),'funcion':([0,2,],[3,5,]),'lista_parametros_opt':([7,],[9,]),'lista_parametros':([7,],[10,]),'empty':([7,14,27,36,],[11,24,31,43,]),'parametro':([7,15,],[12,25,]),'tipo':([13,23,53,],[16,28,57,]),'tipo_retorno_opt':([14,],[22,]),'bloque':([22,],[26,]),'lista_sentencias_opt':([27,],[29,]),'lista_sentencias':([27,],[30,]),'sentencia':([27,30,],[32,39,]),'declaracion_variable':([27,30,],[33,33,]),'asignacion':([27,30,],[34,34,]),'mut_opt':([36,],[41,]),'expresion':([44,54,59,],[47,58,62,]),}
+_lr_goto_items = {'programa':([0,],[1,]),'lista_funciones':([0,],[2,]),'funcion':([0,2,],[3,5,]),'lista_parametros_opt':([7,],[9,]),'lista_parametros':([7,],[10,]),'empty':([7,14,27,36,],[11,24,31,43,]),'parametro':([7,15,],[12,25,]),'tipo':([13,23,57,],[16,28,77,]),'tipo_retorno_opt':([14,],[22,]),'bloque':([22,],[26,]),'lista_sentencias_opt':([27,],[29,]),'lista_sentencias':([27,],[30,]),'sentencia':([27,30,],[32,39,]),'declaracion_variable':([27,30,],[33,33,]),'asignacion':([27,30,],[34,34,]),'mut_opt':([36,],[41,]),'expresion':([44,48,49,50,58,61,62,63,64,65,66,67,68,69,70,71,72,73,93,],[47,74,75,76,78,79,80,81,82,83,84,85,86,87,88,89,90,91,96,]),}
 
 _lr_goto = {}
 for _k, _v in _lr_goto_items.items():
@@ -27,42 +27,59 @@ for _k, _v in _lr_goto_items.items():
 del _lr_goto_items
 _lr_productions = [
   ("S' -> programa","S'",1,None,None,None),
-  ('programa -> lista_funciones','programa',1,'p_programa','parser.py',11),
-  ('lista_funciones -> funcion','lista_funciones',1,'p_lista_funciones_una','parser.py',16),
-  ('lista_funciones -> lista_funciones funcion','lista_funciones',2,'p_lista_funciones_varias','parser.py',21),
-  ('funcion -> FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloque','funcion',7,'p_funcion','parser.py',27),
-  ('tipo_retorno_opt -> FLECHA tipo','tipo_retorno_opt',2,'p_tipo_retorno_opt_con','parser.py',38),
-  ('tipo_retorno_opt -> empty','tipo_retorno_opt',1,'p_tipo_retorno_opt_vacio','parser.py',43),
-  ('lista_parametros_opt -> lista_parametros','lista_parametros_opt',1,'p_lista_parametros_opt_con','parser.py',48),
-  ('lista_parametros_opt -> empty','lista_parametros_opt',1,'p_lista_parametros_opt_vacio','parser.py',53),
-  ('lista_parametros -> parametro','lista_parametros',1,'p_lista_parametros_una','parser.py',58),
-  ('lista_parametros -> lista_parametros COMA parametro','lista_parametros',3,'p_lista_parametros_varias','parser.py',63),
-  ('parametro -> IDENTIFICADOR DOS_PUNTOS tipo','parametro',3,'p_parametro','parser.py',68),
-  ('tipo -> TIPO_I32','tipo',1,'p_tipo','parser.py',73),
-  ('tipo -> TIPO_F64','tipo',1,'p_tipo','parser.py',74),
-  ('tipo -> TIPO_BOOL','tipo',1,'p_tipo','parser.py',75),
-  ('tipo -> TIPO_CHAR','tipo',1,'p_tipo','parser.py',76),
-  ('tipo -> TIPO_STRING','tipo',1,'p_tipo','parser.py',77),
-  ('bloque -> LLAVE_IZQ lista_sentencias_opt LLAVE_DER','bloque',3,'p_bloque','parser.py',83),
-  ('lista_sentencias_opt -> lista_sentencias','lista_sentencias_opt',1,'p_lista_sentencias_opt_con','parser.py',88),
-  ('lista_sentencias_opt -> empty','lista_sentencias_opt',1,'p_lista_sentencias_opt_vacio','parser.py',93),
-  ('lista_sentencias -> sentencia','lista_sentencias',1,'p_lista_sentencias_una','parser.py',98),
-  ('lista_sentencias -> lista_sentencias sentencia','lista_sentencias',2,'p_lista_sentencias_varias','parser.py',103),
-  ('sentencia -> declaracion_variable','sentencia',1,'p_sentencia','parser.py',108),
-  ('sentencia -> asignacion','sentencia',1,'p_sentencia','parser.py',109),
-  ('sentencia -> error PUNTO_COMA','sentencia',2,'p_sentencia','parser.py',110),
-  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMA','declaracion_variable',8,'p_declaracion_variable_con_tipo_y_valor','parser.py',118),
-  ('declaracion_variable -> LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_valor','parser.py',126),
-  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_tipo','parser.py',134),
-  ('declaracion_variable -> LET mut_opt IDENTIFICADOR PUNTO_COMA','declaracion_variable',4,'p_declaracion_variable_sin_nada','parser.py',142),
-  ('mut_opt -> MUT','mut_opt',1,'p_mut_opt_con','parser.py',150),
-  ('mut_opt -> empty','mut_opt',1,'p_mut_opt_vacio','parser.py',155),
-  ('asignacion -> IDENTIFICADOR IGUAL expresion PUNTO_COMA','asignacion',4,'p_asignacion','parser.py',162),
-  ('expresion -> NUMERO_ENTERO','expresion',1,'p_expresion_numero_entero','parser.py',168),
-  ('expresion -> NUMERO_DECIMAL','expresion',1,'p_expresion_numero_decimal','parser.py',173),
-  ('expresion -> STRING','expresion',1,'p_expresion_string','parser.py',178),
-  ('expresion -> TRUE','expresion',1,'p_expresion_true','parser.py',183),
-  ('expresion -> FALSE','expresion',1,'p_expresion_false','parser.py',188),
-  ('expresion -> IDENTIFICADOR','expresion',1,'p_expresion_identificador','parser.py',193),
-  ('empty -> <empty>','empty',0,'p_empty','parser.py',197),
+  ('programa -> lista_funciones','programa',1,'p_programa','parser.py',25),
+  ('lista_funciones -> funcion','lista_funciones',1,'p_lista_funciones_una','parser.py',30),
+  ('lista_funciones -> lista_funciones funcion','lista_funciones',2,'p_lista_funciones_varias','parser.py',35),
+  ('funcion -> FN IDENTIFICADOR PAREN_IZQ lista_parametros_opt PAREN_DER tipo_retorno_opt bloque','funcion',7,'p_funcion','parser.py',41),
+  ('tipo_retorno_opt -> FLECHA tipo','tipo_retorno_opt',2,'p_tipo_retorno_opt_con','parser.py',52),
+  ('tipo_retorno_opt -> empty','tipo_retorno_opt',1,'p_tipo_retorno_opt_vacio','parser.py',57),
+  ('lista_parametros_opt -> lista_parametros','lista_parametros_opt',1,'p_lista_parametros_opt_con','parser.py',62),
+  ('lista_parametros_opt -> empty','lista_parametros_opt',1,'p_lista_parametros_opt_vacio','parser.py',67),
+  ('lista_parametros -> parametro','lista_parametros',1,'p_lista_parametros_una','parser.py',72),
+  ('lista_parametros -> lista_parametros COMA parametro','lista_parametros',3,'p_lista_parametros_varias','parser.py',77),
+  ('parametro -> IDENTIFICADOR DOS_PUNTOS tipo','parametro',3,'p_parametro','parser.py',82),
+  ('tipo -> TIPO_I32','tipo',1,'p_tipo','parser.py',87),
+  ('tipo -> TIPO_F64','tipo',1,'p_tipo','parser.py',88),
+  ('tipo -> TIPO_BOOL','tipo',1,'p_tipo','parser.py',89),
+  ('tipo -> TIPO_CHAR','tipo',1,'p_tipo','parser.py',90),
+  ('tipo -> TIPO_STRING','tipo',1,'p_tipo','parser.py',91),
+  ('bloque -> LLAVE_IZQ lista_sentencias_opt LLAVE_DER','bloque',3,'p_bloque','parser.py',97),
+  ('lista_sentencias_opt -> lista_sentencias','lista_sentencias_opt',1,'p_lista_sentencias_opt_con','parser.py',102),
+  ('lista_sentencias_opt -> empty','lista_sentencias_opt',1,'p_lista_sentencias_opt_vacio','parser.py',107),
+  ('lista_sentencias -> sentencia','lista_sentencias',1,'p_lista_sentencias_una','parser.py',112),
+  ('lista_sentencias -> lista_sentencias sentencia','lista_sentencias',2,'p_lista_sentencias_varias','parser.py',117),
+  ('sentencia -> declaracion_variable','sentencia',1,'p_sentencia','parser.py',122),
+  ('sentencia -> asignacion','sentencia',1,'p_sentencia','parser.py',123),
+  ('sentencia -> error PUNTO_COMA','sentencia',2,'p_sentencia','parser.py',124),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo IGUAL expresion PUNTO_COMA','declaracion_variable',8,'p_declaracion_variable_con_tipo_y_valor','parser.py',132),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR IGUAL expresion PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_valor','parser.py',140),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR DOS_PUNTOS tipo PUNTO_COMA','declaracion_variable',6,'p_declaracion_variable_solo_tipo','parser.py',148),
+  ('declaracion_variable -> LET mut_opt IDENTIFICADOR PUNTO_COMA','declaracion_variable',4,'p_declaracion_variable_sin_nada','parser.py',156),
+  ('mut_opt -> MUT','mut_opt',1,'p_mut_opt_con','parser.py',164),
+  ('mut_opt -> empty','mut_opt',1,'p_mut_opt_vacio','parser.py',169),
+  ('asignacion -> IDENTIFICADOR IGUAL expresion PUNTO_COMA','asignacion',4,'p_asignacion','parser.py',176),
+  ('expresion -> expresion MAS expresion','expresion',3,'p_expresion_binaria','parser.py',183),
+  ('expresion -> expresion MENOS expresion','expresion',3,'p_expresion_binaria','parser.py',184),
+  ('expresion -> expresion MULT expresion','expresion',3,'p_expresion_binaria','parser.py',185),
+  ('expresion -> expresion DIV expresion','expresion',3,'p_expresion_binaria','parser.py',186),
+  ('expresion -> expresion MODULO expresion','expresion',3,'p_expresion_binaria','parser.py',187),
+  ('expresion -> expresion IGUAL_IGUAL expresion','expresion',3,'p_expresion_binaria','parser.py',188),
+  ('expresion -> expresion DIFERENTE expresion','expresion',3,'p_expresion_binaria','parser.py',189),
+  ('expresion -> expresion MAYORQUE expresion','expresion',3,'p_expresion_binaria','parser.py',190),
+  ('expresion -> expresion MENORQUE expresion','expresion',3,'p_expresion_binaria','parser.py',191),
+  ('expresion -> expresion MAYOR_IGUAL expresion','expresion',3,'p_expresion_binaria','parser.py',192),
+  ('expresion -> expresion MENOR_IGUAL expresion','expresion',3,'p_expresion_binaria','parser.py',193),
+  ('expresion -> expresion AND expresion','expresion',3,'p_expresion_binaria','parser.py',194),
+  ('expresion -> expresion OR expresion','expresion',3,'p_expresion_binaria','parser.py',195),
+  ('expresion -> MENOS expresion','expresion',2,'p_expresion_menos_unario','parser.py',200),
+  ('expresion -> NOT expresion','expresion',2,'p_expresion_not','parser.py',205),
+  ('expresion -> PAREN_IZQ expresion PAREN_DER','expresion',3,'p_expresion_agrupada','parser.py',210),
+  ('expresion -> NUMERO_ENTERO','expresion',1,'p_expresion_numero_entero','parser.py',215),
+  ('expresion -> NUMERO_DECIMAL','expresion',1,'p_expresion_numero_decimal','parser.py',220),
+  ('expresion -> STRING','expresion',1,'p_expresion_string','parser.py',225),
+  ('expresion -> CHAR','expresion',1,'p_expresion_char','parser.py',230),
+  ('expresion -> TRUE','expresion',1,'p_expresion_true','parser.py',235),
+  ('expresion -> FALSE','expresion',1,'p_expresion_false','parser.py',240),
+  ('expresion -> IDENTIFICADOR','expresion',1,'p_expresion_identificador','parser.py',245),
+  ('empty -> <empty>','empty',0,'p_empty','parser.py',251),
 ]

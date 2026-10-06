@@ -3,8 +3,22 @@ from compiler.lexer.lexer import tokens
 from compiler.errors import agregar_error
 from compiler.ast.nodos import (
     Programa, Function, Parametro, Bloque,
-    DeclaracionVariable, Asignacion, Literal, Identificador
+    DeclaracionVariable, Asignacion, Literal, Identificador,
+    OperacionBinaria, OperacionUnaria
 )
+
+# Tabla de precedencia de operadores (de menor a mayor precedencia)
+precedence = (
+    ('left', 'OR'),
+    ('left', 'AND'),
+    ('left', 'IGUAL_IGUAL', 'DIFERENTE'),
+    ('left', 'MAYORQUE', 'MENORQUE', 'MAYOR_IGUAL', 'MENOR_IGUAL'),
+    ('left', 'MAS', 'MENOS'),
+    ('left', 'MULT', 'DIV', 'MODULO'),
+    ('right', 'NOT', 'UMENOS'),  
+    
+)
+
 
 # Regla inicial
 def p_programa(p):
@@ -103,7 +117,7 @@ def p_lista_sentencias_varias(p):
     'lista_sentencias : lista_sentencias sentencia'
     p[0] = p[1] + ([p[2]] if p[2] is not None else [])
 
-    
+
 def p_sentencia(p):
     '''sentencia : declaracion_variable
                   | asignacion
@@ -163,7 +177,40 @@ def p_asignacion(p):
     p[0] = Asignacion(nombre=p[1], operador='=', valor=p[3], linea=p.lineno(1))
 
 
-# Expresión 
+# Expresiones 
+
+def p_expresion_binaria(p):
+    '''expresion : expresion MAS expresion
+                  | expresion MENOS expresion
+                  | expresion MULT expresion
+                  | expresion DIV expresion
+                  | expresion MODULO expresion
+                  | expresion IGUAL_IGUAL expresion
+                  | expresion DIFERENTE expresion
+                  | expresion MAYORQUE expresion
+                  | expresion MENORQUE expresion
+                  | expresion MAYOR_IGUAL expresion
+                  | expresion MENOR_IGUAL expresion
+                  | expresion AND expresion
+                  | expresion OR expresion'''
+    p[0] = OperacionBinaria(p[1], p[2], p[3], linea=p.lineno(2))
+
+
+def p_expresion_menos_unario(p):
+    'expresion : MENOS expresion %prec UMENOS'
+    p[0] = OperacionUnaria('-', p[2], linea=p.lineno(1))
+
+
+def p_expresion_not(p):
+    'expresion : NOT expresion'
+    p[0] = OperacionUnaria('!', p[2], linea=p.lineno(1))
+
+
+def p_expresion_agrupada(p):
+    'expresion : PAREN_IZQ expresion PAREN_DER'
+    p[0] = p[2]
+
+
 def p_expresion_numero_entero(p):
     'expresion : NUMERO_ENTERO'
     p[0] = Literal(p[1], 'i32', linea=p.lineno(1))
@@ -179,6 +226,11 @@ def p_expresion_string(p):
     p[0] = Literal(p[1], 'String', linea=p.lineno(1))
 
 
+def p_expresion_char(p):
+    'expresion : CHAR'
+    p[0] = Literal(p[1], 'char', linea=p.lineno(1))
+
+
 def p_expresion_true(p):
     'expresion : TRUE'
     p[0] = Literal(True, 'bool', linea=p.lineno(1))
@@ -192,6 +244,8 @@ def p_expresion_false(p):
 def p_expresion_identificador(p):
     'expresion : IDENTIFICADOR'
     p[0] = Identificador(p[1], linea=p.lineno(1))
+
+
 
 def p_empty(p):
     'empty :'
