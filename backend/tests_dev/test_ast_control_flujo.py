@@ -4,7 +4,6 @@ from compiler.ast.nodos import (
     Break, Continue, Return
 )
 
-# if x > 0 { ... } else { ... }
 condicion_if = OperacionBinaria(Identificador("x"), ">", Literal(0, "i32"))
 nodo_if = If(
     condicion=condicion_if,
@@ -14,7 +13,6 @@ nodo_if = If(
 )
 print("IF:", nodo_if)
 
-# while x > 0 { x = x - 1; }
 nodo_while = While(
     condicion=OperacionBinaria(Identificador("x"), ">", Literal(0, "i32")),
     bloque=Bloque([]),
@@ -22,7 +20,7 @@ nodo_while = While(
 )
 print("WHILE:", nodo_while)
 
-# 'outer: loop { break 'outer; }
+
 nodo_loop = Loop(
     bloque=Bloque([Break(etiqueta="outer")]),
     etiqueta="outer",
@@ -31,7 +29,6 @@ nodo_loop = Loop(
 print("LOOP:", nodo_loop)
 print("  contenido:", nodo_loop.bloque.sentencias)
 
-# match numero { 1 => ..., _ => ... }
 nodo_match = Match(
     expresion=Identificador("numero"),
     casos=[
@@ -44,7 +41,6 @@ print("MATCH:", nodo_match)
 for caso in nodo_match.casos:
     print("  caso:", caso)
 
-# return x + 1;
 nodo_return = Return(
     valor=OperacionBinaria(Identificador("x"), "+", Literal(1, "i32"))
 )

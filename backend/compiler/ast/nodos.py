@@ -180,7 +180,91 @@ class Return(Nodo):
     """return;  /  return expr;"""
     def __init__(self, valor=None, linea=0, columna=0):
         super().__init__(linea, columna)
-        self.valor = valor  # None si no retorna nada
+        self.valor = valor  
 
     def __repr__(self):
         return f"return {self.valor}" if self.valor is not None else "return"
+
+
+# FUNCIONES 
+class Parametro(Nodo):
+    """Un parámetro de función: nombre : tipo"""
+    def __init__(self, nombre, tipo, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.nombre = nombre
+        self.tipo = tipo
+
+    def __repr__(self):
+        return f"{self.nombre}: {self.tipo}"
+
+
+class Function(Nodo):
+    def __init__(self, nombre, parametros, tipo_retorno, cuerpo, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.nombre = nombre
+        self.parametros = parametros        # lista de Parametro
+        self.tipo_retorno = tipo_retorno    # puede ser None (sin retorno)
+        self.cuerpo = cuerpo                # Bloque
+
+    def __repr__(self):
+        params = ", ".join(str(p) for p in self.parametros)
+        ret = f" -> {self.tipo_retorno}" if self.tipo_retorno else ""
+        return f"fn {self.nombre}({params}){ret} {{...}}"
+
+
+class LlamadaFuncion(Nodo):
+    """nombre(argumentos)"""
+    def __init__(self, nombre, argumentos, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.nombre = nombre
+        self.argumentos = argumentos  # lista de expresiones
+
+    def __repr__(self):
+        args = ", ".join(str(a) for a in self.argumentos)
+        return f"{self.nombre}({args})"
+
+
+
+# ARREGLOS Y SLICES 
+
+class Arreglo(Nodo):
+    """Literal de arreglo: [1, 2, 3]"""
+    def __init__(self, elementos, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.elementos = elementos  # lista de expresiones
+
+    def __repr__(self):
+        return f"[{', '.join(str(e) for e in self.elementos)}]"
+
+
+class AccesoIndice(Nodo):
+    def __init__(self, arreglo, indice, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.arreglo = arreglo  # expresión (puede ser otro AccesoIndice, para multidim)
+        self.indice = indice    # expresión
+
+    def __repr__(self):
+        return f"{self.arreglo}[{self.indice}]"
+
+
+class Slice(Nodo):
+    def __init__(self, arreglo, inicio, fin, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.arreglo = arreglo
+        self.inicio = inicio
+        self.fin = fin
+
+    def __repr__(self):
+        return f"&{self.arreglo}[{self.inicio}..{self.fin}]"
+
+
+
+# NODO RAÍZ
+class Programa(Nodo):
+    """Nodo raíz del AST: lista de funciones declaradas (incluye main)."""
+    def __init__(self, funciones, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.funciones = funciones  # lista de Function
+
+    def __repr__(self):
+        return f"Programa({len(self.funciones)} funciones)"
