@@ -97,3 +97,90 @@ class LlamadaPrintln(Nodo):
 
     def __repr__(self):
         return f'println!("{self.formato}", {self.argumentos})'
+
+
+# CONTROL DE FLUJO
+
+class If(Nodo):
+    def __init__(self, condicion, bloque_entonces, bloque_sino=None, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.condicion = condicion
+        self.bloque_entonces = bloque_entonces
+        self.bloque_sino = bloque_sino  
+
+    def __repr__(self):
+        return f"if {self.condicion} {{...}} else {{...}}"
+
+
+class While(Nodo):
+    def __init__(self, condicion, bloque, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.condicion = condicion
+        self.bloque = bloque
+
+    def __repr__(self):
+        return f"while {self.condicion} {{...}}"
+
+
+class Loop(Nodo):
+    def __init__(self, bloque, etiqueta=None, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.bloque = bloque
+        self.etiqueta = etiqueta  # None o string, ej: "outer"
+
+    def __repr__(self):
+        et = f"'{self.etiqueta}: " if self.etiqueta else ""
+        return f"{et}loop {{...}}"
+
+
+class CasoMatch(Nodo):
+    def __init__(self, patron, bloque, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.patron = patron  # una expresión, o None para el comodín '_'
+        self.bloque = bloque
+
+    def __repr__(self):
+        p = self.patron if self.patron is not None else "_"
+        return f"{p} => {{...}}"
+
+
+class Match(Nodo):
+    def __init__(self, expresion, casos, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.expresion = expresion
+        self.casos = casos  # lista de CasoMatch
+
+    def __repr__(self):
+        return f"match {self.expresion} {{ {len(self.casos)} casos }}"
+
+
+
+# SENTENCIAS DE TRANSFERENCIA 
+class Break(Nodo):
+    """break;  /  break 'etiqueta;"""
+    def __init__(self, etiqueta=None, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.etiqueta = etiqueta
+
+    def __repr__(self):
+        return f"break '{self.etiqueta}" if self.etiqueta else "break"
+
+
+class Continue(Nodo):
+    """continue;  /  continue 'etiqueta;"""
+    def __init__(self, etiqueta=None, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.etiqueta = etiqueta
+
+    def __repr__(self):
+        return f"continue '{self.etiqueta}" if self.etiqueta else "continue"
+
+
+class Return(Nodo):
+    """return;  /  return expr;"""
+    def __init__(self, valor=None, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.valor = valor  # None si no retorna nada
+
+    def __repr__(self):
+        return f"return {self.valor}" if self.valor is not None else "return"
