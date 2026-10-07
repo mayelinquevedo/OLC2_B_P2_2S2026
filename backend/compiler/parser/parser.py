@@ -5,7 +5,8 @@ from compiler.ast.nodos import (
     Programa, Function, Parametro, Bloque,
     DeclaracionVariable, Asignacion, Literal, Identificador,
     OperacionBinaria, OperacionUnaria,
-    If, While, Loop, Match, CasoMatch
+    If, While, Loop, Match, CasoMatch,
+    Break, Continue, Return, LlamadaPrintln, LlamadaFuncion
 )
 
 # Tabla de precedencia de operadores (de menor a mayor precedencia)
@@ -126,6 +127,11 @@ def p_sentencia(p):
                   | while_stmt
                   | loop_stmt
                   | match_stmt
+                  | break_stmt
+                  | continue_stmt
+                  | return_stmt
+                  | println_stmt
+                  | llamada_funcion_stmt
                   | error PUNTO_COMA'''
     if len(p) == 2:
         p[0] = p[1]
@@ -255,6 +261,80 @@ def p_bloque_o_expresion_expr(p):
 
 
 
+# break / continue / return 
+def p_break_sin_etiqueta(p):
+    'break_stmt : BREAK PUNTO_COMA'
+    p[0] = Break(etiqueta=None, linea=p.lineno(1))
+
+
+def p_break_con_etiqueta(p):
+    'break_stmt : BREAK ETIQUETA PUNTO_COMA'
+    p[0] = Break(etiqueta=p[2], linea=p.lineno(1))
+
+
+def p_continue_sin_etiqueta(p):
+    'continue_stmt : CONTINUE PUNTO_COMA'
+    p[0] = Continue(etiqueta=None, linea=p.lineno(1))
+
+
+def p_continue_con_etiqueta(p):
+    'continue_stmt : CONTINUE ETIQUETA PUNTO_COMA'
+    p[0] = Continue(etiqueta=p[2], linea=p.lineno(1))
+
+
+def p_return_sin_valor(p):
+    'return_stmt : RETURN PUNTO_COMA'
+    p[0] = Return(valor=None, linea=p.lineno(1))
+
+
+def p_return_con_valor(p):
+    'return_stmt : RETURN expresion PUNTO_COMA'
+    p[0] = Return(valor=p[2], linea=p.lineno(1))
+
+
+# println! 
+def p_println_stmt(p):
+    'println_stmt : IDENTIFICADOR NOT PAREN_IZQ STRING args_opt PAREN_DER PUNTO_COMA'
+    if p[1] != 'println':
+        agregar_error("Sintactico", f"Funcion embebida desconocida '{p[1]}!'", p.lineno(1))
+    p[0] = LlamadaPrintln(formato=p[4], argumentos=p[5], linea=p.lineno(1))
+
+
+def p_args_opt_con(p):
+    'args_opt : COMA lista_argumentos'
+    p[0] = p[2]
+
+
+def p_args_opt_vacio(p):
+    'args_opt : empty'
+    p[0] = []
+
+
+def p_lista_argumentos_uno(p):
+    'lista_argumentos : expresion'
+    p[0] = [p[1]]
+
+
+def p_lista_argumentos_varios(p):
+    'lista_argumentos : lista_argumentos COMA expresion'
+    p[0] = p[1] + [p[3]]
+
+
+# Llamada a función como sentencia 
+def p_llamada_funcion_stmt(p):
+    'llamada_funcion_stmt : IDENTIFICADOR PAREN_IZQ lista_argumentos_opt PAREN_DER PUNTO_COMA'
+    p[0] = LlamadaFuncion(nombre=p[1], argumentos=p[3], linea=p.lineno(1))
+
+
+def p_lista_argumentos_opt_con(p):
+    'lista_argumentos_opt : lista_argumentos'
+    p[0] = p[1]
+
+
+def p_lista_argumentos_opt_vacio(p):
+    'lista_argumentos_opt : empty'
+    p[0] = []
+
 # Expresiones 
 
 def p_expresion_binaria(p):
@@ -278,6 +358,9 @@ def p_expresion_menos_unario(p):
     'expresion : MENOS expresion %prec UMENOS'
     p[0] = OperacionUnaria('-', p[2], linea=p.lineno(1))
 
+def p_expresion_llamada_funcion(p):
+    'expresion : IDENTIFICADOR PAREN_IZQ lista_argumentos_opt PAREN_DER'
+    p[0] = LlamadaFuncion(nombre=p[1], argumentos=p[3], linea=p.lineno(1))
 
 def p_expresion_not(p):
     'expresion : NOT expresion'
