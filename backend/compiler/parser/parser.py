@@ -4,7 +4,8 @@ from compiler.errors import agregar_error
 from compiler.ast.nodos import (
     Programa, Function, Parametro, Bloque,
     DeclaracionVariable, Asignacion, Literal, Identificador,
-    OperacionBinaria, OperacionUnaria
+    OperacionBinaria, OperacionUnaria,
+    If, While, Loop, Match, CasoMatch
 )
 
 # Tabla de precedencia de operadores (de menor a mayor precedencia)
@@ -121,6 +122,10 @@ def p_lista_sentencias_varias(p):
 def p_sentencia(p):
     '''sentencia : declaracion_variable
                   | asignacion
+                  | if_stmt
+                  | while_stmt
+                  | loop_stmt
+                  | match_stmt
                   | error PUNTO_COMA'''
     if len(p) == 2:
         p[0] = p[1]
@@ -175,6 +180,79 @@ def p_mut_opt_vacio(p):
 def p_asignacion(p):
     'asignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMA'
     p[0] = Asignacion(nombre=p[1], operador='=', valor=p[3], linea=p.lineno(1))
+
+
+# if / else 
+def p_if_stmt_sin_else(p):
+    'if_stmt : IF expresion bloque'
+    p[0] = If(condicion=p[2], bloque_entonces=p[3], bloque_sino=None, linea=p.lineno(1))
+
+
+def p_if_stmt_con_else(p):
+    'if_stmt : IF expresion bloque ELSE bloque'
+    p[0] = If(condicion=p[2], bloque_entonces=p[3], bloque_sino=p[5], linea=p.lineno(1))
+
+
+def p_if_stmt_else_if(p):
+    'if_stmt : IF expresion bloque ELSE if_stmt'
+    p[0] = If(condicion=p[2], bloque_entonces=p[3], bloque_sino=Bloque([p[5]]), linea=p.lineno(1))
+
+
+# while 
+def p_while_stmt(p):
+    'while_stmt : WHILE expresion bloque'
+    p[0] = While(condicion=p[2], bloque=p[3], linea=p.lineno(1))
+
+
+# loop 
+def p_loop_stmt_sin_etiqueta(p):
+    'loop_stmt : LOOP bloque'
+    p[0] = Loop(bloque=p[2], etiqueta=None, linea=p.lineno(1))
+
+
+def p_loop_stmt_con_etiqueta(p):
+    'loop_stmt : ETIQUETA DOS_PUNTOS LOOP bloque'
+    p[0] = Loop(bloque=p[4], etiqueta=p[1], linea=p.lineno(1))
+
+
+
+# match 
+def p_match_stmt(p):
+    'match_stmt : MATCH expresion LLAVE_IZQ lista_casos LLAVE_DER'
+    p[0] = Match(expresion=p[2], casos=p[4], linea=p.lineno(1))
+
+
+def p_lista_casos_uno(p):
+    'lista_casos : caso'
+    p[0] = [p[1]]
+
+
+def p_lista_casos_varios(p):
+    'lista_casos : lista_casos caso'
+    p[0] = p[1] + [p[2]]
+
+
+def p_caso_expresion(p):
+    'caso : expresion FLECHA_MATCH bloque_o_expresion COMA'
+    p[0] = CasoMatch(patron=p[1], bloque=p[3], linea=p.lineno(1))
+
+
+def p_caso_comodin(p):
+    'caso : IDENTIFICADOR FLECHA_MATCH bloque_o_expresion COMA'
+    if p[1] != '_':
+        agregar_error("Sintactico", f"Se esperaba un patron valido o '_', se obtuvo '{p[1]}'", p.lineno(1))
+    p[0] = CasoMatch(patron=None, bloque=p[3], linea=p.lineno(1))
+
+
+def p_bloque_o_expresion_bloque(p):
+    'bloque_o_expresion : bloque'
+    p[0] = p[1]
+
+
+def p_bloque_o_expresion_expr(p):
+    'bloque_o_expresion : expresion'
+    p[0] = Bloque([p[1]], linea=p.lineno(1))
+
 
 
 # Expresiones 
