@@ -6,7 +6,8 @@ from compiler.ast.nodos import (
     DeclaracionVariable, Asignacion, Literal, Identificador,
     OperacionBinaria, OperacionUnaria,
     If, While, Loop, Match, CasoMatch,
-    Break, Continue, Return, LlamadaPrintln, LlamadaFuncion
+    Break, Continue, Return, LlamadaPrintln, LlamadaFuncion,
+    Arreglo, AccesoIndice, Slice
 )
 
 # Tabla de precedencia de operadores (de menor a mayor precedencia)
@@ -184,9 +185,13 @@ def p_mut_opt_vacio(p):
 
 # Asignación 
 def p_asignacion(p):
-    'asignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMA'
-    p[0] = Asignacion(nombre=p[1], operador='=', valor=p[3], linea=p.lineno(1))
-
+    '''asignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMA
+                   | IDENTIFICADOR MAS_IGUAL expresion PUNTO_COMA
+                   | IDENTIFICADOR MENOS_IGUAL expresion PUNTO_COMA
+                   | IDENTIFICADOR MULT_IGUAL expresion PUNTO_COMA
+                   | IDENTIFICADOR DIV_IGUAL expresion PUNTO_COMA
+                   | IDENTIFICADOR MODULO_IGUAL expresion PUNTO_COMA'''
+    p[0] = Asignacion(nombre=p[1], operador=p[2], valor=p[3], linea=p.lineno(1))
 
 # if / else 
 def p_if_stmt_sin_else(p):
@@ -407,6 +412,29 @@ def p_expresion_identificador(p):
     p[0] = Identificador(p[1], linea=p.lineno(1))
 
 
+# Arreglos y slices 
+def p_expresion_arreglo(p):
+    'expresion : CORCH_IZQ lista_argumentos_opt CORCH_DER'
+    p[0] = Arreglo(elementos=p[2], linea=p.lineno(1))
+
+
+def p_expresion_acceso_indice(p):
+    'expresion : expresion CORCH_IZQ expresion CORCH_DER'
+    p[0] = AccesoIndice(arreglo=p[1], indice=p[3], linea=p.lineno(2))
+
+
+def p_expresion_slice(p):
+    'expresion : AMPER expresion CORCH_IZQ expresion RANGO expresion CORCH_DER'
+    p[0] = Slice(arreglo=p[2], inicio=p[4], fin=p[6], linea=p.lineno(1))
+
+
+
+# String::from(...) 
+def p_expresion_string_from(p):
+    'expresion : TIPO_STRING DOBLE_DOS_PUNTOS IDENTIFICADOR PAREN_IZQ expresion PAREN_DER'
+    if p[3] != 'from':
+        agregar_error("Sintactico", f"Metodo desconocido 'String::{p[3]}'", p.lineno(1))
+    p[0] = LlamadaFuncion(nombre='String::from', argumentos=[p[5]], linea=p.lineno(1))
 
 def p_empty(p):
     'empty :'
