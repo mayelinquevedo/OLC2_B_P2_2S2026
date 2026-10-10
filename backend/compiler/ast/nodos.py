@@ -69,14 +69,14 @@ class DeclaracionVariable(Nodo):
 
 
 class Asignacion(Nodo):
-    def __init__(self, nombre, operador, valor, linea=0, columna=0):
+    def __init__(self, destino, operador, valor, linea=0, columna=0):
         super().__init__(linea, columna)
-        self.nombre = nombre
+        self.destino = destino      
         self.operador = operador
         self.valor = valor
 
     def __repr__(self):
-        return f"{self.nombre} {self.operador} {self.valor}"
+        return f"{self.destino} {self.operador} {self.valor}"
 
 
 class Bloque(Nodo):
@@ -257,6 +257,18 @@ class Slice(Nodo):
     def __repr__(self):
         return f"&{self.arreglo}[{self.inicio}..{self.fin}]"
 
+
+class LlamadaMetodo(Nodo):
+    """objeto.metodo(argumentos)  Ej: texto.len(), numeros.reverse()"""
+    def __init__(self, objeto, nombre, argumentos, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.objeto = objeto
+        self.nombre = nombre
+        self.argumentos = argumentos
+
+    def __repr__(self):
+        args = ", ".join(str(a) for a in self.argumentos)
+        return f"{self.objeto}.{self.nombre}({args})"
 
 
 # NODO RAÍZ

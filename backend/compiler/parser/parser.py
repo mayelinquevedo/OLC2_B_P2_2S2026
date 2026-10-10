@@ -7,7 +7,7 @@ from compiler.ast.nodos import (
     OperacionBinaria, OperacionUnaria,
     If, While, Loop, Match, CasoMatch,
     Break, Continue, Return, LlamadaPrintln, LlamadaFuncion,
-    Arreglo, AccesoIndice, Slice
+    Arreglo, AccesoIndice, Slice, LlamadaMetodo
 )
 
 # Tabla de precedencia de operadores (de menor a mayor precedencia)
@@ -19,6 +19,7 @@ precedence = (
     ('left', 'MAS', 'MENOS'),
     ('left', 'MULT', 'DIV', 'MODULO'),
     ('right', 'NOT', 'UMENOS'),  
+    ('left', 'CORCH_IZQ', 'PUNTO'),
     
 )
 
@@ -51,6 +52,7 @@ def p_funcion(p):
     )
 
 
+
 def p_tipo_retorno_opt_con(p):
     'tipo_retorno_opt : FLECHA tipo'
     p[0] = p[2]
@@ -60,6 +62,9 @@ def p_tipo_retorno_opt_vacio(p):
     'tipo_retorno_opt : empty'
     p[0] = None
 
+def p_tipo_arreglo(p):
+    'tipo : CORCH_IZQ tipo PUNTO_COMA NUMERO_ENTERO CORCH_DER'
+    p[0] = f"[{p[2]}; {p[4]}]"
 
 def p_lista_parametros_opt_con(p):
     'lista_parametros_opt : lista_parametros'
@@ -131,13 +136,15 @@ def p_sentencia(p):
                   | break_stmt
                   | continue_stmt
                   | return_stmt
-                  | println_stmt
-                  | llamada_funcion_stmt
                   | error PUNTO_COMA'''
     if len(p) == 2:
         p[0] = p[1]
     else:
         p[0] = None
+
+def p_sentencia_expresion(p):
+    'sentencia : expresion PUNTO_COMA'
+    p[0] = p[1]
 
 # Declaración de variable 
 def p_declaracion_variable_con_tipo_y_valor(p):
@@ -185,14 +192,13 @@ def p_mut_opt_vacio(p):
 
 # Asignación 
 def p_asignacion(p):
-    '''asignacion : IDENTIFICADOR IGUAL expresion PUNTO_COMA
-                   | IDENTIFICADOR MAS_IGUAL expresion PUNTO_COMA
-                   | IDENTIFICADOR MENOS_IGUAL expresion PUNTO_COMA
-                   | IDENTIFICADOR MULT_IGUAL expresion PUNTO_COMA
-                   | IDENTIFICADOR DIV_IGUAL expresion PUNTO_COMA
-                   | IDENTIFICADOR MODULO_IGUAL expresion PUNTO_COMA'''
-    p[0] = Asignacion(nombre=p[1], operador=p[2], valor=p[3], linea=p.lineno(1))
-
+    '''asignacion : expresion IGUAL expresion PUNTO_COMA
+                   | expresion MAS_IGUAL expresion PUNTO_COMA
+                   | expresion MENOS_IGUAL expresion PUNTO_COMA
+                   | expresion MULT_IGUAL expresion PUNTO_COMA
+                   | expresion DIV_IGUAL expresion PUNTO_COMA
+                   | expresion MODULO_IGUAL expresion PUNTO_COMA'''
+    p[0] = Asignacion(destino=p[1], operador=p[2], valor=p[3], linea=p.lineno(2))
 # if / else 
 def p_if_stmt_sin_else(p):
     'if_stmt : IF expresion bloque'
@@ -297,22 +303,6 @@ def p_return_con_valor(p):
     p[0] = Return(valor=p[2], linea=p.lineno(1))
 
 
-# println! 
-def p_println_stmt(p):
-    'println_stmt : IDENTIFICADOR NOT PAREN_IZQ STRING args_opt PAREN_DER PUNTO_COMA'
-    if p[1] != 'println':
-        agregar_error("Sintactico", f"Funcion embebida desconocida '{p[1]}!'", p.lineno(1))
-    p[0] = LlamadaPrintln(formato=p[4], argumentos=p[5], linea=p.lineno(1))
-
-
-def p_args_opt_con(p):
-    'args_opt : COMA lista_argumentos'
-    p[0] = p[2]
-
-
-def p_args_opt_vacio(p):
-    'args_opt : empty'
-    p[0] = []
 
 
 def p_lista_argumentos_uno(p):
@@ -323,12 +313,6 @@ def p_lista_argumentos_uno(p):
 def p_lista_argumentos_varios(p):
     'lista_argumentos : lista_argumentos COMA expresion'
     p[0] = p[1] + [p[3]]
-
-
-# Llamada a función como sentencia 
-def p_llamada_funcion_stmt(p):
-    'llamada_funcion_stmt : IDENTIFICADOR PAREN_IZQ lista_argumentos_opt PAREN_DER PUNTO_COMA'
-    p[0] = LlamadaFuncion(nombre=p[1], argumentos=p[3], linea=p.lineno(1))
 
 
 def p_lista_argumentos_opt_con(p):
@@ -430,11 +414,27 @@ def p_expresion_slice(p):
 
 
 # String::from(...) 
-def p_expresion_string_from(p):
-    'expresion : TIPO_STRING DOBLE_DOS_PUNTOS IDENTIFICADOR PAREN_IZQ expresion PAREN_DER'
-    if p[3] != 'from':
-        agregar_error("Sintactico", f"Metodo desconocido 'String::{p[3]}'", p.lineno(1))
-    p[0] = LlamadaFuncion(nombre='String::from', argumentos=[p[5]], linea=p.lineno(1))
+def p_expresion_println(p):
+    'expresion : IDENTIFICADOR NOT PAREN_IZQ lista_argumentos_opt PAREN_DER'
+    if p[1] != 'println':
+        agregar_error("Sintactico", f"Funcion embebida desconocida '{p[1]}!'", p.lineno(1))
+    args = p[4]
+    if args and isinstance(args[0], Literal) and args[0].tipo == 'String':
+        p[0] = LlamadaPrintln(formato=args[0].valor, argumentos=args[1:], linea=p.lineno(1))
+    else:
+        p[0] = LlamadaPrintln(formato=None, argumentos=args, linea=p.lineno(1))
+
+
+def p_expresion_metodo(p):
+    'expresion : expresion PUNTO IDENTIFICADOR PAREN_IZQ lista_argumentos_opt PAREN_DER'
+    p[0] = LlamadaMetodo(objeto=p[1], nombre=p[3], argumentos=p[5], linea=p.lineno(2))
+
+
+def p_expresion_string_estatico(p):
+    'expresion : TIPO_STRING DOBLE_DOS_PUNTOS IDENTIFICADOR PAREN_IZQ lista_argumentos_opt PAREN_DER'
+    p[0] = LlamadaFuncion(nombre=f'String::{p[3]}', argumentos=p[5], linea=p.lineno(1))
+
+
 
 def p_empty(p):
     'empty :'
