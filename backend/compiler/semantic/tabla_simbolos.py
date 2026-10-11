@@ -1,8 +1,6 @@
 """
 Tabla de simbolos con soporte de ambitos (scopes) anidados.
 Cada scope es un diccionario {nombre: info_simbolo}.
-La busqueda de un simbolo recorre desde el scope mas interno
-hacia externos 
 """
 
 class Simbolo:
@@ -12,7 +10,8 @@ class Simbolo:
         self.mutable = mutable
         self.categoria = categoria  # 'Variable', 'Funcion', 'Parametro'
         self.linea = linea
-        self.valor = valor  #  para el reporte de tabla de simbolos
+        self.valor = valor
+        self.ambito = "Global"
 
     def __repr__(self):
         return f"Simbolo({self.nombre}: {self.tipo}, mut={self.mutable})"
@@ -21,7 +20,8 @@ class Simbolo:
 class TablaSimbolos:
     def __init__(self):
         self.scopes = [{}]
-        self.simbolos_para_reporte = []  
+        self.simbolos_para_reporte = []
+        self.ambito_actual = "Global"
 
     def entrar_scope(self):
         self.scopes.append({})
@@ -30,12 +30,11 @@ class TablaSimbolos:
         self.scopes.pop()
 
     def declarar(self, nombre, simbolo):
-        """Declara un simbolo en el scope actual (el mas interno)."""
+        simbolo.ambito = self.ambito_actual
         self.scopes[-1][nombre] = simbolo
         self.simbolos_para_reporte.append(simbolo)
 
     def buscar(self, nombre):
-        """Busca un simbolo desde el scope mas interno hacia afuera."""
         for scope in reversed(self.scopes):
             if nombre in scope:
                 return scope[nombre]
