@@ -196,7 +196,8 @@ def t_COMENTARIO_BLOQUE(t):
 
 def t_COMENTARIO_BLOQUE_SIN_CERRAR(t):
     r'/\*(.|\n)*'
-    agregar_error("Lexico", "Comentario de bloque sin cerrar (falta '*/')", t.lineno)
+    agregar_error("Lexico", "Comentario de bloque sin cerrar (falta '*/')", t.lineno,
+                  encontrar_columna(t.lexer.lexdata, t.lexpos))
     t.lexer.lineno += t.value.count('\n')
     pass
 

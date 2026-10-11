@@ -102,13 +102,14 @@ class AnalizadorSemantico:
         tipo = nodo.tipo
 
         if tipo is not None and nodo.valor_inicial is not None and tipo_valor is not None and tipo_valor != tipo:
-            self.error(nodo, f"No es posible asignar un valor de tipo {tipo_valor} a una variable de tipo {tipo}.")
+            self.error(nodo.valor_inicial, f"No es posible asignar un valor de tipo {tipo_valor} a una variable de tipo {tipo}.")
         elif tipo is None:
             if nodo.valor_inicial is None:
                 self.error(nodo, f"No se puede inferir el tipo de '{nodo.nombre}': falta tipo o valor inicial.")
-            tipo = tipo_valor  
+            tipo = tipo_valor
         self.tabla.declarar(nodo.nombre, Simbolo(nodo.nombre, tipo, nodo.mutable, "Variable", nodo.linea))
-
+    
+    
     def _raiz(self, destino):
         while isinstance(destino, AccesoIndice):
             destino = destino.arreglo
