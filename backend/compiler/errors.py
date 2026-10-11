@@ -28,3 +28,6 @@ def imprimir_reporte():
         print(f"[Error {e['tipo']}] Línea {e['linea']}, Columna {e['columna']}")
         print(e['descripcion'])
         print()
+
+def obtener_errores():
+    return errores
