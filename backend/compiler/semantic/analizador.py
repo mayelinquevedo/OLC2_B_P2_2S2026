@@ -78,11 +78,13 @@ class AnalizadorSemantico:
 
     def visitar_Function(self, nodo):
         self.funcion_actual = nodo
+        self.tabla.ambito_actual = nodo.nombre
         self.tabla.entrar_scope()
         for p in nodo.parametros:
             self.tabla.declarar(p.nombre, Simbolo(p.nombre, p.tipo, False, "Parametro", p.linea))
         self.visitar_sentencias(nodo.cuerpo.sentencias)
         self.tabla.salir_scope()
+        self.tabla.ambito_actual = "Global"
         self.funcion_actual = None
 
     def visitar_Bloque(self, nodo):
@@ -107,8 +109,14 @@ class AnalizadorSemantico:
             if nodo.valor_inicial is None:
                 self.error(nodo, f"No se puede inferir el tipo de '{nodo.nombre}': falta tipo o valor inicial.")
             tipo = tipo_valor
-        self.tabla.declarar(nodo.nombre, Simbolo(nodo.nombre, tipo, nodo.mutable, "Variable", nodo.linea))
-    
+
+        if nodo.valor_inicial is None:
+            valor = valor_por_defecto(tipo)
+        elif isinstance(nodo.valor_inicial, Literal):
+            valor = nodo.valor_inicial.valor
+        else:
+            valor = None
+        self.tabla.declarar(nodo.nombre, Simbolo(nodo.nombre, tipo, nodo.mutable, "Variable", nodo.linea, valor))
     
     def _raiz(self, destino):
         while isinstance(destino, AccesoIndice):
