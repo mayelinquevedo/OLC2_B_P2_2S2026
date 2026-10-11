@@ -1,6 +1,6 @@
 from compiler.errors import agregar_error
 from compiler.semantic.tabla_simbolos import TablaSimbolos, Simbolo
-from compiler.ast.nodos import Identificador, AccesoIndice
+from compiler.ast.nodos import Identificador, AccesoIndice, Literal
 
 NUMERICOS = ('i32', 'f64')
 
@@ -14,6 +14,16 @@ COMPARABLES = {
 def valor_por_defecto(tipo):
     return {'i32': 0, 'f64': 0.0, 'bool': False, 'String': ''}.get(tipo)
 
+def info_arreglo(tipo):
+    """Si el tipo es arreglo o slice devuelve (tipo_elemento, tamano); si no, None."""
+    if tipo is None:
+        return None
+    if tipo.startswith('&['):          # slice: &[i32]
+        return tipo[2:-1], None
+    if tipo.startswith('['):           # arreglo: [i32; 5] o [[i32; 3]; 2]
+        i = tipo.rfind(';')
+        return tipo[1:i], int(tipo[i + 1:-1])
+    return None
 
 def tipo_binario(op, izq, der):
     """Devuelve el tipo resultante segun las tablas del enunciado, o None si no es valido."""
@@ -36,6 +46,7 @@ class AnalizadorSemantico:
     def __init__(self):
         self.tabla = TablaSimbolos()
         self.funcion_actual = None
+        self.bucles = []
 
     def error(self, nodo, mensaje):
         agregar_error("Semantico", mensaje, nodo.linea, nodo.columna)
@@ -172,6 +183,15 @@ class AnalizadorSemantico:
             self.error(nodo, f"El método '{nodo.nombre}' no existe.")
             return None
 
+        if nodo.nombre == 'typeof':
+            if len(tipos_args) != 1:
+                self.error(nodo, "typeof espera exactamente un argumento.")
+            return 'String'
+        if nodo.nombre == 'random':
+            if len(tipos_args) != 2 or any(t not in (None, 'i32') for t in tipos_args):
+                self.error(nodo, "random espera dos argumentos de tipo i32.")
+            return 'i32'
+
         s = self.tabla.buscar(nodo.nombre)
         if s is None or s.categoria != "Funcion":
             self.error(nodo, f"La función '{nodo.nombre}' no ha sido declarada.")
@@ -193,3 +213,150 @@ class AnalizadorSemantico:
             if marcadores != len(nodo.argumentos):
                 self.error(nodo, f"println! tiene {marcadores} marcadores pero recibió {len(nodo.argumentos)} argumentos.")
         return 'void'
+
+
+    def _exigir_bool(self, expr, nombre):
+        t = expr.aceptar(self)
+        if t is not None and t != 'bool':
+            self.error(expr, f"La condición del {nombre} debe ser de tipo bool, pero es {t}.")
+
+    def visitar_If(self, nodo):
+        self._exigir_bool(nodo.condicion, "if")
+        nodo.bloque_entonces.aceptar(self)
+        if nodo.bloque_sino is not None:
+            nodo.bloque_sino.aceptar(self)
+
+    def visitar_While(self, nodo):
+        self._exigir_bool(nodo.condicion, "while")
+        self.bucles.append(None)
+        nodo.bloque.aceptar(self)
+        self.bucles.pop()
+
+    def visitar_Loop(self, nodo):
+        self.bucles.append(nodo.etiqueta)
+        nodo.bloque.aceptar(self)
+        self.bucles.pop()
+
+    def _validar_salto(self, nodo, palabra):
+        if not self.bucles:
+            self.error(nodo, f"'{palabra}' solo puede usarse dentro de un bucle.")
+        elif nodo.etiqueta is not None and nodo.etiqueta not in self.bucles:
+            self.error(nodo, f"La etiqueta '{nodo.etiqueta}' no existe.")
+
+    def visitar_Break(self, nodo):
+        self._validar_salto(nodo, "break")
+
+    def visitar_Continue(self, nodo):
+        self._validar_salto(nodo, "continue")
+
+    def visitar_Match(self, nodo):
+        t = nodo.expresion.aceptar(self)
+        tiene_comodin = False
+        for caso in nodo.casos:
+            if caso.patron is None:
+                tiene_comodin = True
+            else:
+                tp = caso.patron.aceptar(self)
+                if t is not None and tp is not None and tp != t:
+                    self.error(caso.patron, f"El patrón es de tipo {tp}, pero se evalúa un valor de tipo {t}.")
+            caso.bloque.aceptar(self)
+        if not tiene_comodin:
+            self.error(nodo, "El match debe incluir un caso comodín '_'.")
+
+    #  Arreglos y slices 
+    def visitar_Arreglo(self, nodo):
+        tipos = [e.aceptar(self) for e in nodo.elementos]
+        if not tipos:
+            self.error(nodo, "No se puede inferir el tipo de un arreglo vacío.")
+            return None
+        if None in tipos:
+            return None
+        base = tipos[0]
+        for t in tipos[1:]:
+            if t != base:
+                self.error(nodo, f"Todos los elementos del arreglo deben ser del mismo tipo: se esperaba {base} y se encontró {t}.")
+                return None
+        return f"[{base}; {len(tipos)}]"
+
+    def visitar_AccesoIndice(self, nodo):
+        t_arr = nodo.arreglo.aceptar(self)
+        t_idx = nodo.indice.aceptar(self)
+        if t_idx is not None and t_idx != 'i32':
+            self.error(nodo, f"El índice debe ser de tipo i32, pero es {t_idx}.")
+        if t_arr is None:
+            return None
+        info = info_arreglo(t_arr)
+        if info is None:
+            self.error(nodo, f"No es posible indexar un valor de tipo {t_arr}.")
+            return None
+        elemento, tam = info
+        if tam is not None and isinstance(nodo.indice, Literal) and nodo.indice.tipo == 'i32':
+            if nodo.indice.valor < 0 or nodo.indice.valor >= tam:
+                self.error(nodo, "Índice fuera de los límites del arreglo.")
+        return elemento
+
+    def visitar_Slice(self, nodo):
+        t_arr = nodo.arreglo.aceptar(self)
+        for extremo in (nodo.inicio, nodo.fin):
+            t = extremo.aceptar(self)
+            if t is not None and t != 'i32':
+                self.error(nodo, f"Los extremos del slice deben ser de tipo i32, pero se encontró {t}.")
+        if t_arr is None:
+            return None
+        info = info_arreglo(t_arr)
+        if info is None:
+            self.error(nodo, f"No es posible crear un slice de un valor de tipo {t_arr}.")
+            return None
+        elemento, tam = info
+        if tam is not None and isinstance(nodo.inicio, Literal) and isinstance(nodo.fin, Literal):
+            if nodo.inicio.valor < 0 or nodo.fin.valor > tam or nodo.inicio.valor > nodo.fin.valor:
+                self.error(nodo, "El rango del slice está fuera de los límites del arreglo.")
+        return f"&[{elemento}]"
+
+    #  Metodos 
+    def visitar_LlamadaMetodo(self, nodo):
+        t = nodo.objeto.aceptar(self)
+        args = [a.aceptar(self) for a in nodo.argumentos]
+        if t is None:
+            return None
+        m = nodo.nombre
+        es_str = (t == 'String')
+        info = info_arreglo(t)
+
+        def aridad(n):
+            if len(args) != n:
+                self.error(nodo, f"El método '{m}' espera {n} argumentos, pero recibió {len(args)}.")
+                return False
+            return True
+
+        if m == 'len' and (es_str or info):
+            aridad(0)
+            return 'i32'
+        if m == 'contains' and (es_str or info):
+            if aridad(1):
+                esperado = 'String' if es_str else info[0]
+                if args[0] is not None and args[0] != esperado:
+                    self.error(nodo, f"contains espera un argumento de tipo {esperado}, pero recibió {args[0]}.")
+            return 'bool'
+        if es_str and m in ('to_uppercase', 'to_lowercase'):
+            aridad(0)
+            return 'String'
+        if es_str and m == 'replace':
+            if aridad(2) and any(a is not None and a != 'String' for a in args):
+                self.error(nodo, "replace espera dos argumentos de tipo String.")
+            return 'String'
+        if es_str and m == 'split':
+            if aridad(1) and args[0] not in (None, 'String'):
+                self.error(nodo, "split espera un argumento de tipo String.")
+            return '&[String]'
+        if info and m == 'reverse':
+            aridad(0)
+            raiz = self._raiz(nodo.objeto)
+            if isinstance(raiz, Identificador):
+                s = self.tabla.buscar(raiz.nombre)
+                if s is not None and not s.mutable:
+                    self.error(nodo, f"No es posible modificar '{raiz.nombre}' porque fue declarada como inmutable.")
+            return 'void'
+
+        self.error(nodo, f"El tipo {t} no tiene un método '{m}'.")
+        return None
