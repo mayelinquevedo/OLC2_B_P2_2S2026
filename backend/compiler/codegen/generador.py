@@ -2,6 +2,7 @@ from compiler.ast.nodos import Identificador
 
 CONDICIONES = {"==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge"}
 TIPOS_ESCALARES = ("i32", "bool")
+MAX_PARAMETROS = 8
 
 
 def escapar_ascii(texto):
@@ -92,8 +93,9 @@ class GeneradorARM64:
         self.offset = 0
         self.max_offset = 0
         self.bucles = []
+        self.etiqueta_retorno = None
 
-    #  si aparece un nodo que aun no soportamos
+    # ---- si aparece un nodo que aun no soportamos, avisamos claro ----
     def __getattr__(self, nombre):
         if nombre.startswith("visitar_"):
             def no_implementado(nodo):
@@ -101,12 +103,12 @@ class GeneradorARM64:
             return no_implementado
         raise AttributeError(nombre)
 
-    # utilidades para emitir codigo 
+    # ---- utilidades para emitir codigo ----
     def emitir(self, instruccion):
         self.texto.append("    " + instruccion)
 
     def comentario(self, texto):
-        self.texto.append("    // " + texto)
+        self.texto.append("    # " + texto)
 
     def etiqueta(self, nombre):
         self.texto.append(nombre + ":")
@@ -132,7 +134,7 @@ class GeneradorARM64:
         self.emitir("mov x8, #64")
         self.emitir("svc #0")
 
-    #variables locales (stack)
+    # ---- variables locales (stack) ----
     def entrar_scope(self):
         self.scopes.append({"vars": {}, "offset_previo": self.offset})
 
@@ -152,7 +154,7 @@ class GeneradorARM64:
                 return s["vars"][nombre]
         raise RuntimeError(f"variable '{nombre}' no encontrada en el generador")
 
-    #  punto de entrada 
+    # ---- punto de entrada ----
     def generar(self, programa):
         programa.aceptar(self)
         datos = list(self.datos)
@@ -172,18 +174,19 @@ class GeneradorARM64:
             salida.append(RUTINA_PRINT_BOOL)
         return "\n".join(salida) + "\n"
 
-    # estructura 
+    # ---- estructura ----
     def visitar_Programa(self, nodo):
         for f in nodo.funciones:
             f.aceptar(self)
 
     def visitar_Function(self, nodo):
-        if nodo.parametros:
-            raise NotImplementedError("parametros de funcion: siguiente rebanada")
+        if len(nodo.parametros) > MAX_PARAMETROS:
+            raise NotImplementedError("mas de 8 parametros: no soportado")
         self.scopes = []
         self.bucles = []
         self.offset = 0
         self.max_offset = 0
+        self.etiqueta_retorno = f".Lret_{nodo.nombre}"
         self.comentario(f"----- inicio de la funcion {nodo.nombre} -----")
         self.etiqueta(f"fn_{nodo.nombre}")
         self.comentario("prologo: guardar frame pointer y link register")
@@ -191,12 +194,20 @@ class GeneradorARM64:
         self.emitir("mov x29, sp")
         pos_reserva = len(self.texto)
         self.emitir("")
+        self.entrar_scope()
+        for i, p in enumerate(nodo.parametros):
+            if p.tipo not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"parametros de tipo {p.tipo}: siguiente rebanada")
+            offset = self.declarar_variable(p.nombre, p.tipo)
+            self.emitir(f"str x{i}, [x29, #-{offset}]    // parametro {p.nombre}")
         nodo.cuerpo.aceptar(self)
+        self.salir_scope()
         tamano = ((self.max_offset + 15) // 16) * 16
         if tamano:
             self.texto[pos_reserva] = f"    sub sp, sp, #{tamano}    // reservar espacio para variables locales"
         else:
-            self.texto[pos_reserva] = "    // sin variables locales"
+            self.texto[pos_reserva] = "    # sin variables locales"
+        self.etiqueta(self.etiqueta_retorno)
         self.comentario("epilogo: liberar variables, restaurar registros y retornar")
         self.emitir("mov sp, x29")
         self.emitir("ldp x29, x30, [sp], #16")
@@ -209,7 +220,32 @@ class GeneradorARM64:
             s.aceptar(self)
         self.salir_scope()
 
-    # declaraciones y asignaciones
+    def visitar_Return(self, nodo):
+        self.comentario("return")
+        if nodo.valor is not None:
+            if nodo.valor.tipo_resultado not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"retornar {nodo.valor.tipo_resultado}: siguiente rebanada")
+            nodo.valor.aceptar(self)
+        self.emitir(f"b {self.etiqueta_retorno}")
+
+    # ---- llamadas a funciones del usuario ----
+    def visitar_LlamadaFuncion(self, nodo):
+        if "::" in nodo.nombre or nodo.nombre in ("typeof", "random"):
+            raise NotImplementedError(f"{nodo.nombre}: siguiente rebanada")
+        n = len(nodo.argumentos)
+        if n > MAX_PARAMETROS:
+            raise NotImplementedError("mas de 8 argumentos: no soportado")
+        self.comentario(f"llamada a {nodo.nombre}")
+        for a in nodo.argumentos:
+            if a.tipo_resultado not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"argumentos {a.tipo_resultado}: siguiente rebanada")
+            a.aceptar(self)
+            self.emitir("str x0, [sp, #-16]!    // apilar argumento")
+        for i in reversed(range(n)):
+            self.emitir(f"ldr x{i}, [sp], #16")
+        self.emitir(f"bl fn_{nodo.nombre}")
+
+    # ---- declaraciones y asignaciones ----
     def visitar_DeclaracionVariable(self, nodo):
         if nodo.valor_inicial is not None:
             tipo = nodo.tipo or nodo.valor_inicial.tipo_resultado
@@ -238,7 +274,7 @@ class GeneradorARM64:
             self.operar(nodo.operador[0])
         self.emitir(f"str x0, [x29, #-{offset}]")
 
-    #  expresiones: el resultado queda siempre en x0 
+    # ---- expresiones: el resultado queda siempre en x0 ----
     def visitar_Literal(self, nodo):
         if nodo.tipo == "bool":
             self.emitir(f"mov x0, #{1 if nodo.valor else 0}")
@@ -277,9 +313,9 @@ class GeneradorARM64:
         fin = self.nueva_etiqueta("fin_logico")
         nodo.izquierda.aceptar(self)
         if nodo.operador == "&&":
-            self.emitir(f"cbz x0, {fin}    // si es falso, el resultado ya es 0")
+            self.emitir(f"cbz x0, {fin}      // si es falso, el resultado ya es 0")
         else:
-            self.emitir(f"cbnz x0, {fin}    // si es verdadero, el resultado ya es 1")
+            self.emitir(f"cbnz x0, {fin}     // si es verdadero, el resultado ya es 1")
         nodo.derecha.aceptar(self)
         self.etiqueta(fin)
 
@@ -299,7 +335,7 @@ class GeneradorARM64:
         self.emitir("str x0, [sp, #-16]!    // apilar operando izquierdo")
         nodo.derecha.aceptar(self)
         self.emitir("mov x1, x0")
-        self.emitir("ldr x0, [sp], #16    // recuperar operando izquierdo")
+        self.emitir("ldr x0, [sp], #16      // recuperar operando izquierdo")
         if op in CONDICIONES:
             self.emitir("cmp x0, x1")
             self.emitir(f"cset x0, {CONDICIONES[op]}")
@@ -318,7 +354,7 @@ class GeneradorARM64:
         else:
             raise NotImplementedError("operador unario: siguiente rebanada")
 
-    # control de flujo
+    # ---- control de flujo ----
     def visitar_If(self, nodo):
         fin = self.nueva_etiqueta("if_fin")
         nodo.condicion.aceptar(self)
@@ -372,7 +408,38 @@ class GeneradorARM64:
         self.comentario("continue")
         self.emitir(f"b {self._buscar_bucle(nodo.etiqueta)['inicio']}")
 
-    #  println! 
+    def visitar_Match(self, nodo):
+        t = nodo.expresion.tipo_resultado
+        if t not in TIPOS_ESCALARES:
+            raise NotImplementedError(f"match sobre {t}: siguiente rebanada")
+        fin = self.nueva_etiqueta("match_fin")
+        self.comentario("match")
+        # el valor evaluado se guarda en una variable local (no en la pila
+        # temporal) para que un break/continue dentro de un caso no la desbalancee
+        self.entrar_scope()
+        offset = self.declarar_variable("$match", t)
+        nodo.expresion.aceptar(self)
+        self.emitir(f"str x0, [x29, #-{offset}]    // valor evaluado por el match")
+        for caso in nodo.casos:
+            if caso.patron is None:
+                self.comentario("caso comodin _")
+                caso.bloque.aceptar(self)
+                self.emitir(f"b {fin}")
+            else:
+                if caso.patron.tipo_resultado != t:
+                    raise NotImplementedError("patron de otro tipo: siguiente rebanada")
+                siguiente = self.nueva_etiqueta("match_sig")
+                caso.patron.aceptar(self)
+                self.emitir(f"ldr x1, [x29, #-{offset}]")
+                self.emitir("cmp x1, x0")
+                self.emitir(f"b.ne {siguiente}")
+                caso.bloque.aceptar(self)
+                self.emitir(f"b {fin}")
+                self.etiqueta(siguiente)
+        self.etiqueta(fin)
+        self.salir_scope()
+
+    # ---- println! ----
     def visitar_LlamadaPrintln(self, nodo):
         if nodo.formato is None:
             raise NotImplementedError("println! sin cadena de formato: siguiente rebanada")
