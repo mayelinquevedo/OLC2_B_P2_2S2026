@@ -43,6 +43,8 @@ def tipo_binario(op, izq, der):
 
 
 class AnalizadorSemantico:
+    anota_tipos = True
+
     def __init__(self):
         self.tabla = TablaSimbolos()
         self.funcion_actual = None

@@ -8,7 +8,10 @@ class Nodo:
     def aceptar(self, visitor):
         nombre_metodo = f"visitar_{type(self).__name__}"
         metodo = getattr(visitor, nombre_metodo)
-        return metodo(self)
+        resultado = metodo(self)
+        if getattr(visitor, "anota_tipos", False):
+            self.tipo_resultado = resultado
+        return resultado
 
 
 
