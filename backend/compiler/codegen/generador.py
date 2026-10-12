@@ -1,8 +1,11 @@
-from compiler.ast.nodos import Identificador
+from math import prod
+
+from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal
 
 CONDICIONES = {"==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge"}
 TIPOS_ESCALARES = ("i32", "bool")
 MAX_PARAMETROS = 8
+BYTES_ELEMENTO = 8
 
 
 def escapar_ascii(texto):
@@ -22,6 +25,27 @@ def escapar_ascii(texto):
         else:
             partes.append("\\%03o" % b)
     return "".join(partes), len(datos)
+
+
+def dims_arreglo(tipo):
+    """'[[i32; 3]; 2]' -> ('i32', [2, 3]).  Si no es arreglo -> (tipo, [])."""
+    dims = []
+    while isinstance(tipo, str) and tipo.startswith("["):
+        i = tipo.rfind(";")
+        dims.append(int(tipo[i + 1:-1]))
+        tipo = tipo[1:i]
+    return tipo, dims
+
+
+def hojas_arreglo(nodo):
+    """Elementos escalares de un literal de arreglo, en orden row-major."""
+    resultado = []
+    for e in nodo.elementos:
+        if isinstance(e, Arreglo):
+            resultado += hojas_arreglo(e)
+        else:
+            resultado.append(e)
+    return resultado
 
 
 RUTINA_PRINT_INT = """print_int:
@@ -89,6 +113,8 @@ class GeneradorARM64:
         self.num_etiquetas = 0
         self.usa_print_int = False
         self.usa_print_bool = False
+        self.usa_rt_div = False
+        self.usa_rt_indice = False
         self.scopes = []
         self.offset = 0
         self.max_offset = 0
@@ -134,6 +160,49 @@ class GeneradorARM64:
         self.emitir("mov x8, #64")
         self.emitir("svc #0")
 
+
+    def cargar_inmediato(self, reg, valor):
+        if valor <= 0xFFFF:
+            self.emitir(f"mov {reg}, #{valor}")
+        else:
+            self.emitir(f"movz {reg}, #{valor & 0xFFFF}")
+            self.emitir(f"movk {reg}, #{(valor >> 16) & 0xFFFF}, lsl #16")
+
+    def direccion_local(self, reg, offset):
+        """reg = x29 - offset (direccion de un slot del frame)."""
+        if offset <= 4095:
+            self.emitir(f"sub {reg}, x29, #{offset}")
+        else:
+            self.cargar_inmediato("x9", offset)
+            self.emitir(f"sub {reg}, x29, x9")
+
+    def cargar_local(self, reg, offset, nota=""):
+        sufijo = f"    // {nota}" if nota else ""
+        if offset <= 256:
+            self.emitir(f"ldr {reg}, [x29, #-{offset}]{sufijo}")
+        else:
+            self.direccion_local("x9", offset)
+            self.emitir(f"ldr {reg}, [x9]{sufijo}")
+
+    def guardar_local(self, reg, offset):
+        if offset <= 256:
+            self.emitir(f"str {reg}, [x29, #-{offset}]")
+        else:
+            self.direccion_local("x9", offset)
+            self.emitir(f"str {reg}, [x9]")
+
+    def lineas_reserva_frame(self, tamano):
+        if tamano <= 4095:
+            return [f"    sub sp, sp, #{tamano}    // reservar espacio para variables locales"]
+        lineas = []
+        if tamano <= 0xFFFF:
+            lineas.append(f"    mov x9, #{tamano}")
+        else:
+            lineas.append(f"    movz x9, #{tamano & 0xFFFF}")
+            lineas.append(f"    movk x9, #{(tamano >> 16) & 0xFFFF}, lsl #16")
+        lineas.append("    sub sp, sp, x9    // reservar espacio para variables locales")
+        return lineas
+
     # ---- variables locales (stack) ----
     def entrar_scope(self):
         self.scopes.append({"vars": {}, "offset_previo": self.offset})
@@ -142,11 +211,20 @@ class GeneradorARM64:
         s = self.scopes.pop()
         self.offset = s["offset_previo"]
 
-    def declarar_variable(self, nombre, tipo):
-        self.offset += 8
+    def reservar(self, tamano):
+        """Reserva 'tamano' bytes en el frame y devuelve el offset del slot.
+        El slot ocupa [x29 - offset, x29 - offset + tamano)."""
+        self.offset += tamano
         self.max_offset = max(self.max_offset, self.offset)
-        self.scopes[-1]["vars"][nombre] = (self.offset, tipo)
         return self.offset
+
+    def registrar_variable(self, nombre, tipo, offset):
+        self.scopes[-1]["vars"][nombre] = (offset, tipo)
+
+    def declarar_variable(self, nombre, tipo):
+        offset = self.reservar(8)
+        self.registrar_variable(nombre, tipo, offset)
+        return offset
 
     def buscar_variable(self, nombre):
         for s in reversed(self.scopes):
@@ -154,9 +232,32 @@ class GeneradorARM64:
                 return s["vars"][nombre]
         raise RuntimeError(f"variable '{nombre}' no encontrada en el generador")
 
+    # ---- rutinas de error en ejecucion ----
+    def rutina_error(self, etiqueta, mensaje):
+        nombre, largo = self.nuevo_string(mensaje)
+        return (f"{etiqueta}:\n"
+                f"    mov x0, #1\n"
+                f"    adrp x1, {nombre}\n"
+                f"    add x1, x1, :lo12:{nombre}\n"
+                f"    mov x2, #{largo}\n"
+                f"    mov x8, #64\n"
+                f"    svc #0\n"
+                f"    mov x0, #1\n"
+                f"    mov x8, #93\n"
+                f"    svc #0\n")
+
     # ---- punto de entrada ----
     def generar(self, programa):
         programa.aceptar(self)
+        rutinas = []
+        if self.usa_print_int:
+            rutinas.append(RUTINA_PRINT_INT)
+        if self.usa_print_bool:
+            rutinas.append(RUTINA_PRINT_BOOL)
+        if self.usa_rt_div:
+            rutinas.append(self.rutina_error("rt_div_cero", "Error de ejecución: división entre cero\n"))
+        if self.usa_rt_indice:
+            rutinas.append(self.rutina_error("rt_indice", "Error de ejecución: índice fuera de los límites del arreglo\n"))
         datos = list(self.datos)
         if self.usa_print_bool:
             datos += ['txt_true: .ascii "true"', 'txt_false: .ascii "false"']
@@ -168,10 +269,7 @@ class GeneradorARM64:
                    "    mov x8, #93",
                    "    svc #0", ""]
         salida += self.texto
-        if self.usa_print_int:
-            salida.append(RUTINA_PRINT_INT)
-        if self.usa_print_bool:
-            salida.append(RUTINA_PRINT_BOOL)
+        salida += rutinas
         return "\n".join(salida) + "\n"
 
     # ---- estructura ----
@@ -199,12 +297,12 @@ class GeneradorARM64:
             if p.tipo not in TIPOS_ESCALARES:
                 raise NotImplementedError(f"parametros de tipo {p.tipo}: siguiente rebanada")
             offset = self.declarar_variable(p.nombre, p.tipo)
-            self.emitir(f"str x{i}, [x29, #-{offset}]    // parametro {p.nombre}")
+            self.guardar_local(f"x{i}", offset)
         nodo.cuerpo.aceptar(self)
         self.salir_scope()
         tamano = ((self.max_offset + 15) // 16) * 16
         if tamano:
-            self.texto[pos_reserva] = f"    sub sp, sp, #{tamano}    // reservar espacio para variables locales"
+            self.texto[pos_reserva] = "\n".join(self.lineas_reserva_frame(tamano))
         else:
             self.texto[pos_reserva] = "    # sin variables locales"
         self.etiqueta(self.etiqueta_retorno)
@@ -251,6 +349,10 @@ class GeneradorARM64:
             tipo = nodo.tipo or nodo.valor_inicial.tipo_resultado
         else:
             tipo = nodo.tipo
+        elemento, dims = dims_arreglo(tipo)
+        if dims:
+            self.declarar_arreglo(nodo, tipo, elemento, dims)
+            return
         if tipo not in TIPOS_ESCALARES:
             raise NotImplementedError(f"variables de tipo {tipo}: siguiente rebanada")
         self.comentario(f"let {'mut ' if nodo.mutable else ''}{nodo.nombre}: {tipo}")
@@ -260,19 +362,60 @@ class GeneradorARM64:
             self.emitir("mov x0, #0")
         # se declara DESPUES de evaluar el valor: "let x = x + 1" usa la x anterior
         offset = self.declarar_variable(nodo.nombre, tipo)
-        self.emitir(f"str x0, [x29, #-{offset}]")
+        self.guardar_local("x0", offset)
+
+    def declarar_arreglo(self, nodo, tipo, elemento, dims):
+        if elemento not in TIPOS_ESCALARES:
+            raise NotImplementedError(f"arreglos de {elemento}: siguiente rebanada")
+        total = prod(dims)
+        self.comentario(f"let {'mut ' if nodo.mutable else ''}{nodo.nombre}: {tipo}  ({total} elementos, row-major)")
+        # se reserva el espacio ANTES de evaluar y se registra el nombre DESPUES
+        offset = self.reservar(total * BYTES_ELEMENTO)
+        if nodo.valor_inicial is None:
+            self.emitir("mov x0, #0")
+            valores = [None] * total
+        else:
+            if not isinstance(nodo.valor_inicial, Arreglo):
+                raise NotImplementedError("inicializar un arreglo con algo que no es un literal: siguiente rebanada")
+            valores = hojas_arreglo(nodo.valor_inicial)
+            if len(valores) != total:
+                raise RuntimeError("el literal no coincide con las dimensiones declaradas")
+        for k, hoja in enumerate(valores):
+            if hoja is not None:
+                hoja.aceptar(self)
+            # el elemento k vive en la direccion base + k*8 = x29 - (offset - k*8)
+            self.guardar_local("x0", offset - k * BYTES_ELEMENTO)
+        self.registrar_variable(nodo.nombre, tipo, offset)
 
     def visitar_Asignacion(self, nodo):
-        if not isinstance(nodo.destino, Identificador):
-            raise NotImplementedError("asignar a elementos de arreglo: siguiente rebanada")
-        offset, tipo = self.buscar_variable(nodo.destino.nombre)
-        self.comentario(f"{nodo.destino.nombre} {nodo.operador} ...")
-        nodo.valor.aceptar(self)
-        if nodo.operador != "=":
-            self.emitir("mov x1, x0")
-            self.emitir(f"ldr x0, [x29, #-{offset}]")
-            self.operar(nodo.operador[0])
-        self.emitir(f"str x0, [x29, #-{offset}]")
+        if isinstance(nodo.destino, Identificador):
+            offset, tipo = self.buscar_variable(nodo.destino.nombre)
+            if tipo not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"asignar a una variable de tipo {tipo}: siguiente rebanada")
+            self.comentario(f"{nodo.destino.nombre} {nodo.operador} ...")
+            nodo.valor.aceptar(self)
+            if nodo.operador != "=":
+                self.emitir("mov x1, x0")
+                self.cargar_local("x0", offset)
+                self.operar(nodo.operador[0])
+            self.guardar_local("x0", offset)
+        elif isinstance(nodo.destino, AccesoIndice):
+            self.comentario(f"elemento de arreglo {nodo.operador} ...")
+            nodo.valor.aceptar(self)
+            self.emitir("str x0, [sp, #-16]!    // apilar el valor a asignar")
+            _, restantes = self.calcular_direccion(nodo.destino)
+            if restantes:
+                raise NotImplementedError("asignar una fila completa: siguiente rebanada")
+            self.emitir("mov x3, x0                // x3 = direccion del elemento")
+            self.emitir("ldr x1, [sp], #16         // x1 = valor")
+            if nodo.operador == "=":
+                self.emitir("mov x0, x1")
+            else:
+                self.emitir("ldr x0, [x3]")
+                self.operar(nodo.operador[0])
+            self.emitir("str x0, [x3]")
+        else:
+            raise NotImplementedError("destino de asignacion no soportado")
 
     # ---- expresiones: el resultado queda siempre en x0 ----
     def visitar_Literal(self, nodo):
@@ -281,16 +424,13 @@ class GeneradorARM64:
             return
         if nodo.tipo != "i32":
             raise NotImplementedError(f"literales {nodo.tipo}: siguiente rebanada")
-        v = nodo.valor
-        if v <= 0xFFFF:
-            self.emitir(f"mov x0, #{v}")
-        else:
-            self.emitir(f"movz x0, #{v & 0xFFFF}")
-            self.emitir(f"movk x0, #{(v >> 16) & 0xFFFF}, lsl #16")
+        self.cargar_inmediato("x0", nodo.valor)
 
     def visitar_Identificador(self, nodo):
         offset, tipo = self.buscar_variable(nodo.nombre)
-        self.emitir(f"ldr x0, [x29, #-{offset}]    // {nodo.nombre}")
+        if tipo not in TIPOS_ESCALARES:
+            raise NotImplementedError(f"usar '{nodo.nombre}' ({tipo}) como valor: siguiente rebanada")
+        self.cargar_local("x0", offset, nodo.nombre)
 
     def operar(self, op):
         """x0 = x0 (op) x1, con resultado recortado a i32."""
@@ -300,11 +440,14 @@ class GeneradorARM64:
             self.emitir("sub x0, x0, x1")
         elif op == "*":
             self.emitir("mul x0, x0, x1")
-        elif op == "/":
-            self.emitir("sdiv x0, x0, x1")
-        elif op == "%":
-            self.emitir("sdiv x2, x0, x1")
-            self.emitir("msub x0, x2, x1, x0")
+        elif op in ("/", "%"):
+            self.usa_rt_div = True
+            self.emitir("cbz x1, rt_div_cero    // division entre cero: error de ejecucion")
+            if op == "/":
+                self.emitir("sdiv x0, x0, x1")
+            else:
+                self.emitir("sdiv x2, x0, x1")
+                self.emitir("msub x0, x2, x1, x0")
         else:
             raise NotImplementedError(f"operador {op}: siguiente rebanada")
         self.emitir("sxtw x0, w0")
@@ -353,6 +496,101 @@ class GeneradorARM64:
             self.emitir("eor x0, x0, #1")
         else:
             raise NotImplementedError("operador unario: siguiente rebanada")
+
+    # ---- arreglos ----
+    def aplanar_acceso(self, nodo):
+        """matrix[i][j] -> (Identificador matrix, [i, j])"""
+        indices = []
+        while isinstance(nodo, AccesoIndice):
+            indices.insert(0, nodo.indice)
+            nodo = nodo.arreglo
+        return nodo, indices
+
+    def indice_con_limite(self, expr, limite):
+        """Evalua el indice en x0 y verifica en ejecucion que este en [0, limite)."""
+        expr.aceptar(self)
+        # un literal ya fue validado por el analisis semantico
+        if not (isinstance(expr, Literal) and expr.tipo == "i32"):
+            if limite <= 4095:
+                self.emitir(f"cmp x0, #{limite}")
+            else:
+                self.cargar_inmediato("x9", limite)
+                self.emitir("cmp x0, x9")
+            self.emitir("b.hs rt_indice    // sin signo: tambien atrapa los negativos")
+            self.usa_rt_indice = True
+
+    def calcular_direccion(self, nodo):
+        """Deja en x0 la direccion de nodo (un acceso arr[i][j]...).
+        Devuelve (tipo_elemento, dimensiones_que_quedan_sin_indexar).
+
+        Row-major: indice_lineal = ((i1 * D2) + i2) * D3 + i3 ...
+        direccion  = base + indice_lineal * 8"""
+        base, indices = self.aplanar_acceso(nodo)
+        if not isinstance(base, Identificador):
+            raise NotImplementedError("indexar algo que no es una variable: siguiente rebanada")
+        offset, tipo = self.buscar_variable(base.nombre)
+        elemento, dims = dims_arreglo(tipo)
+        if not dims or len(indices) > len(dims):
+            raise RuntimeError(f"'{base.nombre}' no se puede indexar {len(indices)} veces")
+        self.comentario(f"direccion de {base.nombre}" + "".join("[..]" for _ in indices) + " (row-major)")
+        self.indice_con_limite(indices[0], dims[0])
+        for t in range(1, len(indices)):
+            self.emitir("str x0, [sp, #-16]!    // apilar indice acumulado")
+            self.indice_con_limite(indices[t], dims[t])
+            self.emitir("mov x1, x0")
+            self.emitir("ldr x0, [sp], #16")
+            self.cargar_inmediato("x2", dims[t])
+            self.emitir("mul x0, x0, x2")
+            self.emitir("add x0, x0, x1         // acumulado * D + indice")
+        restantes = dims[len(indices):]
+        if restantes:
+            self.cargar_inmediato("x2", prod(restantes))
+            self.emitir("mul x0, x0, x2         // acceso parcial: saltar sub-arreglos completos")
+        self.emitir("lsl x0, x0, #3             // * 8 bytes por elemento")
+        self.direccion_local("x1", offset)
+        self.emitir("add x0, x1, x0")
+        return elemento, restantes
+
+    def visitar_AccesoIndice(self, nodo):
+        _, restantes = self.calcular_direccion(nodo)
+        if restantes:
+            raise NotImplementedError("usar una fila completa como valor: siguiente rebanada")
+        self.emitir("ldr x0, [x0]")
+
+    def visitar_LlamadaMetodo(self, nodo):
+        tipo = nodo.objeto.tipo_resultado
+        elemento, dims = dims_arreglo(tipo)
+        if dims and nodo.nombre == "len":
+            # los arreglos tienen tamano fijo: la longitud se conoce al compilar
+            self.comentario(f"len() = {dims[0]}")
+            self.cargar_inmediato("x0", dims[0])
+            return
+        if dims and nodo.nombre == "reverse":
+            if len(dims) != 1 or not isinstance(nodo.objeto, Identificador):
+                raise NotImplementedError("reverse en arreglos multidimensionales: siguiente rebanada")
+            n = dims[0]
+            self.comentario(f"reverse() de {nodo.objeto.nombre}")
+            if n < 2:
+                return
+            offset, _ = self.buscar_variable(nodo.objeto.nombre)
+            inicio = self.nueva_etiqueta("rev_inicio")
+            fin = self.nueva_etiqueta("rev_fin")
+            self.direccion_local("x0", offset)
+            self.cargar_inmediato("x9", (n - 1) * BYTES_ELEMENTO)
+            self.emitir("add x2, x0, x9         // x0 = primer elemento, x2 = ultimo")
+            self.etiqueta(inicio)
+            self.emitir("cmp x0, x2")
+            self.emitir(f"b.hs {fin}")
+            self.emitir("ldr x3, [x0]")
+            self.emitir("ldr x4, [x2]")
+            self.emitir("str x4, [x0]")
+            self.emitir("str x3, [x2]")
+            self.emitir("add x0, x0, #8")
+            self.emitir("sub x2, x2, #8")
+            self.emitir(f"b {inicio}")
+            self.etiqueta(fin)
+            return
+        raise NotImplementedError(f"metodo {nodo.nombre} sobre {tipo}: siguiente rebanada")
 
     # ---- control de flujo ----
     def visitar_If(self, nodo):
@@ -419,7 +657,7 @@ class GeneradorARM64:
         self.entrar_scope()
         offset = self.declarar_variable("$match", t)
         nodo.expresion.aceptar(self)
-        self.emitir(f"str x0, [x29, #-{offset}]    // valor evaluado por el match")
+        self.guardar_local("x0", offset)
         for caso in nodo.casos:
             if caso.patron is None:
                 self.comentario("caso comodin _")
@@ -430,7 +668,7 @@ class GeneradorARM64:
                     raise NotImplementedError("patron de otro tipo: siguiente rebanada")
                 siguiente = self.nueva_etiqueta("match_sig")
                 caso.patron.aceptar(self)
-                self.emitir(f"ldr x1, [x29, #-{offset}]")
+                self.cargar_local("x1", offset)
                 self.emitir("cmp x1, x0")
                 self.emitir(f"b.ne {siguiente}")
                 caso.bloque.aceptar(self)
