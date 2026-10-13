@@ -55,3 +55,11 @@ fn main() {
     println!("{} {}", 10 / d, 10 % d);
 }
 ''', "3 1\n", 0)
+
+correr("division f64 entre cero", '''
+fn main() {
+    let z: f64;
+    println!("antes");
+    println!("{}", 1.0 / z);
+}
+''', "antes\nError de ejecución: división entre cero\n", 1)
