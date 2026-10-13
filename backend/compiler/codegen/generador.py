@@ -1,9 +1,27 @@
+import struct
 from math import prod
 
 from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal
+from compiler.codegen.rutinas import (RUTINA_PRINT_INT, RUTINA_PRINT_BOOL,
+                                      RUTINA_PRINT_CHAR, RUTINA_PRINT_F64)
 
 CONDICIONES = {"==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge"}
-TIPOS_ESCALARES = ("i32", "bool")
+# para fcmp: "menor que" es mi y "menor o igual" es ls (asi se comporta bien con NaN)
+CONDICIONES_F64 = {"==": "eq", "!=": "ne", "<": "mi", "<=": "ls", ">": "gt", ">=": "ge"}
+ENTEROS = ("i32", "bool", "char")          # viajan en x0
+TIPOS_ESCALARES = ("i32", "bool", "char", "f64")   # f64 viaja en d0
+COMPARABLES_ENTEROS = {("i32", "i32"), ("bool", "bool"), ("char", "char"),
+                       ("i32", "char"), ("char", "i32")}
+ESCAPES_CHAR = {"n": 10, "t": 9, "r": 13, "0": 0, "\\": 92, "'": 39, '"': 34}
+
+
+def codigo_char(valor):
+    """El lexer entrega el contenido del literal tal cual: 'a' -> 'a', '\\n' -> dos caracteres."""
+    if len(valor) == 2 and valor[0] == "\\" and valor[1] in ESCAPES_CHAR:
+        return ESCAPES_CHAR[valor[1]]
+    return ord(valor)
+
+
 MAX_PARAMETROS = 8
 BYTES_ELEMENTO = 8
 
@@ -48,63 +66,6 @@ def hojas_arreglo(nodo):
     return resultado
 
 
-RUTINA_PRINT_INT = """print_int:
-    # imprime x0 como entero con signo, sin salto de linea
-    stp x29, x30, [sp, #-16]!
-    mov x29, sp
-    sub sp, sp, #32
-    mov x1, sp
-    add x1, x1, #32
-    mov x2, #0
-    mov x3, #0
-    cmp x0, #0
-    b.ge 1f
-    mov x3, #1
-    neg x0, x0
-1:
-    mov x4, #10
-2:
-    udiv x5, x0, x4
-    msub x6, x5, x4, x0
-    add x6, x6, #48
-    sub x1, x1, #1
-    strb w6, [x1]
-    add x2, x2, #1
-    mov x0, x5
-    cbnz x0, 2b
-    cbz x3, 3f
-    sub x1, x1, #1
-    mov w6, #45
-    strb w6, [x1]
-    add x2, x2, #1
-3:
-    mov x0, #1
-    mov x8, #64
-    svc #0
-    mov sp, x29
-    ldp x29, x30, [sp], #16
-    ret
-"""
-
-RUTINA_PRINT_BOOL = """print_bool:
-    # imprime x0 como true o false, sin salto de linea
-    cbz x0, 1f
-    adrp x1, txt_true
-    add x1, x1, :lo12:txt_true
-    mov x2, #4
-    b 2f
-1:
-    adrp x1, txt_false
-    add x1, x1, :lo12:txt_false
-    mov x2, #5
-2:
-    mov x0, #1
-    mov x8, #64
-    svc #0
-    ret
-"""
-
-
 class GeneradorARM64:
     def __init__(self):
         self.datos = []
@@ -113,6 +74,8 @@ class GeneradorARM64:
         self.num_etiquetas = 0
         self.usa_print_int = False
         self.usa_print_bool = False
+        self.usa_print_char = False
+        self.usa_print_f64 = False
         self.usa_rt_div = False
         self.usa_rt_indice = False
         self.scopes = []
@@ -160,7 +123,10 @@ class GeneradorARM64:
         self.emitir("mov x8, #64")
         self.emitir("svc #0")
 
-
+    # ---- inmediatos grandes y acceso al frame ----
+    # Las instrucciones ldr/str con desplazamiento negativo solo llegan a 256
+    # bytes, y sub/add con inmediato solo a 4095. Para offsets mayores se
+    # calcula la direccion en x9 (registro temporal reservado para esto).
     def cargar_inmediato(self, reg, valor):
         if valor <= 0xFFFF:
             self.emitir(f"mov {reg}, #{valor}")
@@ -254,6 +220,10 @@ class GeneradorARM64:
             rutinas.append(RUTINA_PRINT_INT)
         if self.usa_print_bool:
             rutinas.append(RUTINA_PRINT_BOOL)
+        if self.usa_print_char:
+            rutinas.append(RUTINA_PRINT_CHAR)
+        if self.usa_print_f64:
+            rutinas.append(RUTINA_PRINT_F64)
         if self.usa_rt_div:
             rutinas.append(self.rutina_error("rt_div_cero", "Error de ejecución: división entre cero\n"))
         if self.usa_rt_indice:
@@ -261,6 +231,8 @@ class GeneradorARM64:
         datos = list(self.datos)
         if self.usa_print_bool:
             datos += ['txt_true: .ascii "true"', 'txt_false: .ascii "false"']
+        if self.usa_print_f64:
+            datos += ['txt_nan: .ascii "NaN"', 'txt_inf: .ascii "inf"', 'txt_ninf: .ascii "-inf"']
         salida = ["# Codigo generado por OxigenNative", ".section .data"]
         salida += datos
         salida += [".section .text", ".global _start", "_start:",
@@ -278,8 +250,6 @@ class GeneradorARM64:
             f.aceptar(self)
 
     def visitar_Function(self, nodo):
-        if len(nodo.parametros) > MAX_PARAMETROS:
-            raise NotImplementedError("mas de 8 parametros: no soportado")
         self.scopes = []
         self.bucles = []
         self.offset = 0
@@ -293,11 +263,9 @@ class GeneradorARM64:
         pos_reserva = len(self.texto)
         self.emitir("")
         self.entrar_scope()
-        for i, p in enumerate(nodo.parametros):
-            if p.tipo not in TIPOS_ESCALARES:
-                raise NotImplementedError(f"parametros de tipo {p.tipo}: siguiente rebanada")
+        for reg, p in zip(self.registros_de([p.tipo for p in nodo.parametros]), nodo.parametros):
             offset = self.declarar_variable(p.nombre, p.tipo)
-            self.guardar_local(f"x{i}", offset)
+            self.guardar_local(reg, offset)
         nodo.cuerpo.aceptar(self)
         self.salir_scope()
         tamano = ((self.max_offset + 15) // 16) * 16
@@ -323,24 +291,39 @@ class GeneradorARM64:
         if nodo.valor is not None:
             if nodo.valor.tipo_resultado not in TIPOS_ESCALARES:
                 raise NotImplementedError(f"retornar {nodo.valor.tipo_resultado}: siguiente rebanada")
-            nodo.valor.aceptar(self)
+            nodo.valor.aceptar(self)      # el valor queda en x0 (o en d0 si es f64)
         self.emitir(f"b {self.etiqueta_retorno}")
 
     # ---- llamadas a funciones del usuario ----
+    def registros_de(self, tipos):
+        """Registro que le toca a cada parametro/argumento (AAPCS64): los enteros
+        usan x0..x7 y los f64 usan d0..d7, cada grupo con su propio contador."""
+        regs = []
+        ni = nf = 0
+        for tipo in tipos:
+            if tipo not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"parametros/argumentos de tipo {tipo}: siguiente rebanada")
+            if tipo == "f64":
+                regs.append(f"d{nf}")
+                nf += 1
+            else:
+                regs.append(f"x{ni}")
+                ni += 1
+        if ni > MAX_PARAMETROS or nf > MAX_PARAMETROS:
+            raise NotImplementedError("mas de 8 parametros de un mismo tipo: no soportado")
+        return regs
+
     def visitar_LlamadaFuncion(self, nodo):
         if "::" in nodo.nombre or nodo.nombre in ("typeof", "random"):
             raise NotImplementedError(f"{nodo.nombre}: siguiente rebanada")
-        n = len(nodo.argumentos)
-        if n > MAX_PARAMETROS:
-            raise NotImplementedError("mas de 8 argumentos: no soportado")
+        regs = self.registros_de([a.tipo_resultado for a in nodo.argumentos])
         self.comentario(f"llamada a {nodo.nombre}")
-        for a in nodo.argumentos:
-            if a.tipo_resultado not in TIPOS_ESCALARES:
-                raise NotImplementedError(f"argumentos {a.tipo_resultado}: siguiente rebanada")
+        for a, reg in zip(nodo.argumentos, regs):
             a.aceptar(self)
-            self.emitir("str x0, [sp, #-16]!    // apilar argumento")
-        for i in reversed(range(n)):
-            self.emitir(f"ldr x{i}, [sp], #16")
+            origen = "d0" if reg.startswith("d") else "x0"
+            self.emitir(f"str {origen}, [sp, #-16]!    // apilar argumento")
+        for reg in reversed(regs):
+            self.emitir(f"ldr {reg}, [sp], #16")
         self.emitir(f"bl fn_{nodo.nombre}")
 
     # ---- declaraciones y asignaciones ----
@@ -356,13 +339,15 @@ class GeneradorARM64:
         if tipo not in TIPOS_ESCALARES:
             raise NotImplementedError(f"variables de tipo {tipo}: siguiente rebanada")
         self.comentario(f"let {'mut ' if nodo.mutable else ''}{nodo.nombre}: {tipo}")
+        reg = "d0" if tipo == "f64" else "x0"
         if nodo.valor_inicial is not None:
             nodo.valor_inicial.aceptar(self)
         else:
-            self.emitir("mov x0, #0")
+            self.emitir("mov x0, #0")     # los bits en cero son 0, false, '\\0' y 0.0
+            reg = "x0"
         # se declara DESPUES de evaluar el valor: "let x = x + 1" usa la x anterior
         offset = self.declarar_variable(nodo.nombre, tipo)
-        self.guardar_local("x0", offset)
+        self.guardar_local(reg, offset)
 
     def declarar_arreglo(self, nodo, tipo, elemento, dims):
         if elemento not in TIPOS_ESCALARES:
@@ -381,56 +366,109 @@ class GeneradorARM64:
             if len(valores) != total:
                 raise RuntimeError("el literal no coincide con las dimensiones declaradas")
         for k, hoja in enumerate(valores):
+            reg = "x0"
             if hoja is not None:
                 hoja.aceptar(self)
+                if hoja.tipo_resultado == "f64":
+                    reg = "d0"
             # el elemento k vive en la direccion base + k*8 = x29 - (offset - k*8)
-            self.guardar_local("x0", offset - k * BYTES_ELEMENTO)
+            self.guardar_local(reg, offset - k * BYTES_ELEMENTO)
         self.registrar_variable(nodo.nombre, tipo, offset)
 
     def visitar_Asignacion(self, nodo):
+        op = nodo.operador
         if isinstance(nodo.destino, Identificador):
             offset, tipo = self.buscar_variable(nodo.destino.nombre)
             if tipo not in TIPOS_ESCALARES:
                 raise NotImplementedError(f"asignar a una variable de tipo {tipo}: siguiente rebanada")
-            self.comentario(f"{nodo.destino.nombre} {nodo.operador} ...")
-            nodo.valor.aceptar(self)
-            if nodo.operador != "=":
-                self.emitir("mov x1, x0")
-                self.cargar_local("x0", offset)
-                self.operar(nodo.operador[0])
-            self.guardar_local("x0", offset)
+            self.comentario(f"{nodo.destino.nombre} {op} ...")
+            if tipo == "f64":
+                # en "x += 1" el 1 (i32) se promueve a f64
+                self.evaluar_como_f64(nodo.valor)
+                if op != "=":
+                    self.emitir("fmov d1, d0")
+                    self.cargar_local("d0", offset)
+                    self.operar_f64(op[0])
+                self.guardar_local("d0", offset)
+            else:
+                nodo.valor.aceptar(self)
+                if op != "=":
+                    self.emitir("mov x1, x0")
+                    self.cargar_local("x0", offset)
+                    self.operar(op[0])
+                self.guardar_local("x0", offset)
         elif isinstance(nodo.destino, AccesoIndice):
-            self.comentario(f"elemento de arreglo {nodo.operador} ...")
-            nodo.valor.aceptar(self)
-            self.emitir("str x0, [sp, #-16]!    // apilar el valor a asignar")
+            tipo = nodo.destino.tipo_resultado
+            if tipo not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"asignar elementos de tipo {tipo}: siguiente rebanada")
+            es_f64 = (tipo == "f64")
+            self.comentario(f"elemento de arreglo {op} ...")
+            if es_f64:
+                self.evaluar_como_f64(nodo.valor)
+                self.emitir("str d0, [sp, #-16]!    // apilar el valor a asignar")
+            else:
+                nodo.valor.aceptar(self)
+                self.emitir("str x0, [sp, #-16]!    // apilar el valor a asignar")
             _, restantes = self.calcular_direccion(nodo.destino)
             if restantes:
                 raise NotImplementedError("asignar una fila completa: siguiente rebanada")
             self.emitir("mov x3, x0                // x3 = direccion del elemento")
-            self.emitir("ldr x1, [sp], #16         // x1 = valor")
-            if nodo.operador == "=":
-                self.emitir("mov x0, x1")
+            if es_f64:
+                self.emitir("ldr d1, [sp], #16         // d1 = valor")
+                if op == "=":
+                    self.emitir("fmov d0, d1")
+                else:
+                    self.emitir("ldr d0, [x3]")
+                    self.operar_f64(op[0])
+                self.emitir("str d0, [x3]")
             else:
-                self.emitir("ldr x0, [x3]")
-                self.operar(nodo.operador[0])
-            self.emitir("str x0, [x3]")
+                self.emitir("ldr x1, [sp], #16         // x1 = valor")
+                if op == "=":
+                    self.emitir("mov x0, x1")
+                else:
+                    self.emitir("ldr x0, [x3]")
+                    self.operar(op[0])
+                self.emitir("str x0, [x3]")
         else:
             raise NotImplementedError("destino de asignacion no soportado")
 
-    # ---- expresiones: el resultado queda siempre en x0 ----
+    # ---- expresiones: el resultado queda siempre en x0 (o en d0 si es f64) ----
+    def cargar_f64(self, valor):
+        """d0 = valor. Se arma el patron de 64 bits en x9 y se pasa a d0."""
+        bits = struct.unpack("<Q", struct.pack("<d", valor))[0]
+        if bits == 0:
+            self.emitir("fmov d0, xzr")
+            return
+        self.emitir(f"movz x9, #{bits & 0xFFFF}")
+        for desplazamiento in (16, 32, 48):
+            trozo = (bits >> desplazamiento) & 0xFFFF
+            if trozo:
+                self.emitir(f"movk x9, #{trozo}, lsl #{desplazamiento}")
+        self.emitir(f"fmov d0, x9    // {valor!r}")
+
+    def evaluar_como_f64(self, expr):
+        """Evalua expr y deja el resultado en d0 (si era i32, lo convierte)."""
+        expr.aceptar(self)
+        if expr.tipo_resultado == "i32":
+            self.emitir("scvtf d0, x0    // promocion i32 -> f64")
+
     def visitar_Literal(self, nodo):
         if nodo.tipo == "bool":
             self.emitir(f"mov x0, #{1 if nodo.valor else 0}")
-            return
-        if nodo.tipo != "i32":
+        elif nodo.tipo == "char":
+            self.cargar_inmediato("x0", codigo_char(nodo.valor))
+        elif nodo.tipo == "f64":
+            self.cargar_f64(nodo.valor)
+        elif nodo.tipo == "i32":
+            self.cargar_inmediato("x0", nodo.valor)
+        else:
             raise NotImplementedError(f"literales {nodo.tipo}: siguiente rebanada")
-        self.cargar_inmediato("x0", nodo.valor)
 
     def visitar_Identificador(self, nodo):
         offset, tipo = self.buscar_variable(nodo.nombre)
         if tipo not in TIPOS_ESCALARES:
             raise NotImplementedError(f"usar '{nodo.nombre}' ({tipo}) como valor: siguiente rebanada")
-        self.cargar_local("x0", offset, nodo.nombre)
+        self.cargar_local("d0" if tipo == "f64" else "x0", offset, nodo.nombre)
 
     def operar(self, op):
         """x0 = x0 (op) x1, con resultado recortado a i32."""
@@ -452,6 +490,41 @@ class GeneradorARM64:
             raise NotImplementedError(f"operador {op}: siguiente rebanada")
         self.emitir("sxtw x0, w0")
 
+    def operar_f64(self, op):
+        """d0 = d0 (op) d1."""
+        if op == "+":
+            self.emitir("fadd d0, d0, d1")
+        elif op == "-":
+            self.emitir("fsub d0, d0, d1")
+        elif op == "*":
+            self.emitir("fmul d0, d0, d1")
+        elif op in ("/", "%"):
+            self.usa_rt_div = True
+            self.emitir("fcmp d1, #0.0")
+            self.emitir("b.eq rt_div_cero    // division entre cero: error de ejecucion")
+            if op == "/":
+                self.emitir("fdiv d0, d0, d1")
+            else:
+                # a % b = a - trunc(a / b) * b
+                self.emitir("fdiv d2, d0, d1")
+                self.emitir("frintz d2, d2")
+                self.emitir("fmsub d0, d2, d1, d0")
+        else:
+            raise NotImplementedError(f"operador {op}: siguiente rebanada")
+
+    def binaria_f64(self, nodo):
+        op = nodo.operador
+        self.evaluar_como_f64(nodo.izquierda)
+        self.emitir("str d0, [sp, #-16]!    // apilar operando izquierdo (f64)")
+        self.evaluar_como_f64(nodo.derecha)
+        self.emitir("fmov d1, d0")
+        self.emitir("ldr d0, [sp], #16      // recuperar operando izquierdo")
+        if op in CONDICIONES_F64:
+            self.emitir("fcmp d0, d1")
+            self.emitir(f"cset x0, {CONDICIONES_F64[op]}")
+        else:
+            self.operar_f64(op)
+
     def cortocircuito(self, nodo):
         fin = self.nueva_etiqueta("fin_logico")
         nodo.izquierda.aceptar(self)
@@ -469,8 +542,11 @@ class GeneradorARM64:
             return
         ti = nodo.izquierda.tipo_resultado
         td = nodo.derecha.tipo_resultado
+        if "f64" in (ti, td):
+            self.binaria_f64(nodo)
+            return
         if op in CONDICIONES:
-            if (ti, td) not in (("i32", "i32"), ("bool", "bool")):
+            if (ti, td) not in COMPARABLES_ENTEROS:
                 raise NotImplementedError(f"comparar {ti} con {td}: siguiente rebanada")
         elif ti != "i32" or td != "i32":
             raise NotImplementedError("operaciones que no son entre i32: siguiente rebanada")
@@ -491,6 +567,9 @@ class GeneradorARM64:
             nodo.operando.aceptar(self)
             self.emitir("neg x0, x0")
             self.emitir("sxtw x0, w0")
+        elif nodo.operador == "-" and t == "f64":
+            nodo.operando.aceptar(self)
+            self.emitir("fneg d0, d0")
         elif nodo.operador == "!" and t == "bool":
             nodo.operando.aceptar(self)
             self.emitir("eor x0, x0, #1")
@@ -552,10 +631,10 @@ class GeneradorARM64:
         return elemento, restantes
 
     def visitar_AccesoIndice(self, nodo):
-        _, restantes = self.calcular_direccion(nodo)
+        elemento, restantes = self.calcular_direccion(nodo)
         if restantes:
             raise NotImplementedError("usar una fila completa como valor: siguiente rebanada")
-        self.emitir("ldr x0, [x0]")
+        self.emitir("ldr d0, [x0]" if elemento == "f64" else "ldr x0, [x0]")
 
     def visitar_LlamadaMetodo(self, nodo):
         tipo = nodo.objeto.tipo_resultado
@@ -648,7 +727,7 @@ class GeneradorARM64:
 
     def visitar_Match(self, nodo):
         t = nodo.expresion.tipo_resultado
-        if t not in TIPOS_ESCALARES:
+        if t not in ENTEROS:
             raise NotImplementedError(f"match sobre {t}: siguiente rebanada")
         fin = self.nueva_etiqueta("match_fin")
         self.comentario("match")
@@ -698,5 +777,11 @@ class GeneradorARM64:
                 elif arg.tipo_resultado == "bool":
                     self.usa_print_bool = True
                     self.emitir("bl print_bool")
+                elif arg.tipo_resultado == "char":
+                    self.usa_print_char = True
+                    self.emitir("bl print_char")
+                elif arg.tipo_resultado == "f64":
+                    self.usa_print_f64 = True
+                    self.emitir("bl print_f64")
                 else:
                     raise NotImplementedError(f"imprimir valores {arg.tipo_resultado}: siguiente rebanada")
