@@ -4,6 +4,9 @@ from compiler.codegen.generador import GeneradorARM64
 from compiler.errors import limpiar_errores, hay_errores, imprimir_reporte
 from runtime.ejecutor import ejecutar
 
+# El emoji se escribe con su codigo (U+1F600) para que no se pierda al pegar este archivo
+EMOJI = chr(0x1F600)
+
 codigo = r'''
 fn media(a: f64, b: f64) -> f64 {
     return (a + b) / 2.0;
@@ -57,7 +60,7 @@ fn main() {
     println!("{}", 'a');
     println!("{}", 'ñ');
     println!("{}", '€');
-    println!("{}", '');
+    println!("{}", 'EMOJI');
     println!("[{}]", '\n');
     println!("{} {} {}", 'a' == 97, 'a' < 'b', 98 > 'a');
     match 'b' {
@@ -69,10 +72,10 @@ fn main() {
     let letras = ['h', 'o', 'l', 'a'];
     println!("{}{}{}{}", letras[0], letras[1], letras[2], letras[3]);
 }
-'''
+'''.replace("EMOJI", EMOJI)
 
 esperado = ("3.14\n12.5\n2.5\n2.5\n1.5\n-1.5\n-7.25\n6.0\ntrue true false\n3.25\n0.0\n3.5\n13.5\n5.0625\n"
-            "1.5 9.75 4.5\nsuma = 15.75\na\nñ\n€\n\n[\n]\ntrue true true\nes b\nz\nhola\n")
+            "1.5 9.75 4.5\nsuma = 15.75\na\nñ\n€\n" + EMOJI + "\n[\n]\ntrue true true\nes b\nz\nhola\n")
 
 limpiar_errores()
 ast = parser.parse(codigo)
