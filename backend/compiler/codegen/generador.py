@@ -2,14 +2,14 @@ import struct
 from math import prod
 
 from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal
-from compiler.codegen.rutinas import (RUTINA_PRINT_INT, RUTINA_PRINT_BOOL,
-                                      RUTINA_PRINT_CHAR, RUTINA_PRINT_F64)
+from compiler.codegen.rutinas import (RUTINAS, DEPENDENCIAS, MENSAJES_ERROR,
+                                      ORDEN_RUTINAS, HEAP_BYTES)
 
 CONDICIONES = {"==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge"}
 # para fcmp: "menor que" es mi y "menor o igual" es ls (asi se comporta bien con NaN)
 CONDICIONES_F64 = {"==": "eq", "!=": "ne", "<": "mi", "<=": "ls", ">": "gt", ">=": "ge"}
 ENTEROS = ("i32", "bool", "char")          # viajan en x0
-TIPOS_ESCALARES = ("i32", "bool", "char", "f64")   # f64 viaja en d0
+TIPOS_ESCALARES = ("i32", "bool", "char", "f64", "String")   # f64 viaja en d0; String es un puntero en x0
 COMPARABLES_ENTEROS = {("i32", "i32"), ("bool", "bool"), ("char", "char"),
                        ("i32", "char"), ("char", "i32")}
 ESCAPES_CHAR = {"n": 10, "t": 9, "r": 13, "0": 0, "\\": 92, "'": 39, '"': 34}
@@ -72,19 +72,14 @@ class GeneradorARM64:
         self.texto = []
         self.num_strings = 0
         self.num_etiquetas = 0
-        self.usa_print_int = False
-        self.usa_print_bool = False
-        self.usa_print_char = False
-        self.usa_print_f64 = False
-        self.usa_rt_div = False
-        self.usa_rt_indice = False
+        self.usadas = set()
         self.scopes = []
         self.offset = 0
         self.max_offset = 0
         self.bucles = []
         self.etiqueta_retorno = None
 
-    # ---- si aparece un nodo que aun no soportamos, avisamos claro ----
+
     def __getattr__(self, nombre):
         if nombre.startswith("visitar_"):
             def no_implementado(nodo):
@@ -106,6 +101,32 @@ class GeneradorARM64:
         self.num_etiquetas += 1
         return f".L{prefijo}_{self.num_etiquetas}"
 
+    def usar(self, nombre):
+        """Marca una rutina de apoyo (y las que necesita) para incluirla al final."""
+        if nombre in self.usadas:
+            return
+        self.usadas.add(nombre)
+        for dependencia in DEPENDENCIAS.get(nombre, []):
+            self.usar(dependencia)
+
+    def nuevo_string_valor(self, contenido):
+        """Bloque de String en .data: [longitud: 8 bytes][bytes]. Devuelve su etiqueta."""
+        nombre = f"str_{self.num_strings}"
+        self.num_strings += 1
+        escapado, largo = escapar_ascii(contenido)
+        self.datos.append(".balign 8")
+        self.datos.append(f"{nombre}: .quad {largo}")
+        self.datos.append(f'    .ascii "{escapado}"')
+        return nombre
+
+    def cargar_direccion(self, reg, etiqueta):
+        self.emitir(f"adrp {reg}, {etiqueta}")
+        self.emitir(f"add {reg}, {reg}, :lo12:{etiqueta}")
+
+    def cargar_string_vacio(self):
+        self.usadas.add("str_vacio")
+        self.cargar_direccion("x0", "str_vacio")
+
     def nuevo_string(self, contenido):
         nombre = f"str_{self.num_strings}"
         self.num_strings += 1
@@ -123,10 +144,7 @@ class GeneradorARM64:
         self.emitir("mov x8, #64")
         self.emitir("svc #0")
 
-    # ---- inmediatos grandes y acceso al frame ----
-    # Las instrucciones ldr/str con desplazamiento negativo solo llegan a 256
-    # bytes, y sub/add con inmediato solo a 4095. Para offsets mayores se
-    # calcula la direccion en x9 (registro temporal reservado para esto).
+
     def cargar_inmediato(self, reg, valor):
         if valor <= 0xFFFF:
             self.emitir(f"mov {reg}, #{valor}")
@@ -216,23 +234,19 @@ class GeneradorARM64:
     def generar(self, programa):
         programa.aceptar(self)
         rutinas = []
-        if self.usa_print_int:
-            rutinas.append(RUTINA_PRINT_INT)
-        if self.usa_print_bool:
-            rutinas.append(RUTINA_PRINT_BOOL)
-        if self.usa_print_char:
-            rutinas.append(RUTINA_PRINT_CHAR)
-        if self.usa_print_f64:
-            rutinas.append(RUTINA_PRINT_F64)
-        if self.usa_rt_div:
-            rutinas.append(self.rutina_error("rt_div_cero", "Error de ejecución: división entre cero\n"))
-        if self.usa_rt_indice:
-            rutinas.append(self.rutina_error("rt_indice", "Error de ejecución: índice fuera de los límites del arreglo\n"))
+        for nombre in ORDEN_RUTINAS:
+            if nombre in self.usadas:
+                if nombre in MENSAJES_ERROR:
+                    rutinas.append(self.rutina_error(nombre, MENSAJES_ERROR[nombre]))
+                else:
+                    rutinas.append(RUTINAS[nombre])
         datos = list(self.datos)
-        if self.usa_print_bool:
+        if "print_bool" in self.usadas:
             datos += ['txt_true: .ascii "true"', 'txt_false: .ascii "false"']
-        if self.usa_print_f64:
+        if "print_f64" in self.usadas:
             datos += ['txt_nan: .ascii "NaN"', 'txt_inf: .ascii "inf"', 'txt_ninf: .ascii "-inf"']
+        if "str_vacio" in self.usadas:
+            datos += [".balign 8", "str_vacio: .quad 0"]
         salida = ["# Codigo generado por OxigenNative", ".section .data"]
         salida += datos
         salida += [".section .text", ".global _start", "_start:",
@@ -242,6 +256,9 @@ class GeneradorARM64:
                    "    svc #0", ""]
         salida += self.texto
         salida += rutinas
+        if "heap_alloc" in self.usadas:
+            salida += [".section .bss", ".balign 16",
+                       f"heap_base: .skip {HEAP_BYTES}", "heap_ptr: .skip 8"]
         return "\n".join(salida) + "\n"
 
     # ---- estructura ----
@@ -313,8 +330,32 @@ class GeneradorARM64:
             raise NotImplementedError("mas de 8 parametros de un mismo tipo: no soportado")
         return regs
 
+    def evaluar_en_registros(self, nodos):
+        """Evalua cada nodo (cada uno deja su valor en x0) y los reparte en x0, x1, ..."""
+        for n in nodos:
+            n.aceptar(self)
+            self.emitir("str x0, [sp, #-16]!    // apilar argumento")
+        for i in reversed(range(len(nodos))):
+            self.emitir(f"ldr x{i}, [sp], #16")
+
     def visitar_LlamadaFuncion(self, nodo):
-        if "::" in nodo.nombre or nodo.nombre in ("typeof", "random"):
+        if nodo.nombre == "String::from":
+            nodo.argumentos[0].aceptar(self)       # el literal ya es un bloque String valido
+            return
+        if nodo.nombre == "String::new":
+            self.cargar_string_vacio()
+            return
+        if nodo.nombre == "typeof":
+            # el tipo se conoce al compilar: se devuelve como un String constante
+            self.comentario("typeof")
+            self.cargar_direccion("x0", self.nuevo_string_valor(str(nodo.argumentos[0].tipo_resultado)))
+            return
+        if nodo.nombre == "random":
+            self.evaluar_en_registros(nodo.argumentos)
+            self.usar("rt_random")
+            self.emitir("bl rt_random")
+            return
+        if "::" in nodo.nombre:
             raise NotImplementedError(f"{nodo.nombre}: siguiente rebanada")
         regs = self.registros_de([a.tipo_resultado for a in nodo.argumentos])
         self.comentario(f"llamada a {nodo.nombre}")
@@ -342,6 +383,9 @@ class GeneradorARM64:
         reg = "d0" if tipo == "f64" else "x0"
         if nodo.valor_inicial is not None:
             nodo.valor_inicial.aceptar(self)
+        elif tipo == "String":
+            self.cargar_string_vacio()    # un String sin valor inicial es ""
+            reg = "x0"
         else:
             self.emitir("mov x0, #0")     # los bits en cero son 0, false, '\\0' y 0.0
             reg = "x0"
@@ -357,7 +401,10 @@ class GeneradorARM64:
         # se reserva el espacio ANTES de evaluar y se registra el nombre DESPUES
         offset = self.reservar(total * BYTES_ELEMENTO)
         if nodo.valor_inicial is None:
-            self.emitir("mov x0, #0")
+            if elemento == "String":
+                self.cargar_string_vacio()
+            else:
+                self.emitir("mov x0, #0")
             valores = [None] * total
         else:
             if not isinstance(nodo.valor_inicial, Arreglo):
@@ -395,7 +442,7 @@ class GeneradorARM64:
                 if op != "=":
                     self.emitir("mov x1, x0")
                     self.cargar_local("x0", offset)
-                    self.operar(op[0])
+                    self.operar_generico(op[0], tipo, nodo.valor.tipo_resultado)
                 self.guardar_local("x0", offset)
         elif isinstance(nodo.destino, AccesoIndice):
             tipo = nodo.destino.tipo_resultado
@@ -427,12 +474,19 @@ class GeneradorARM64:
                     self.emitir("mov x0, x1")
                 else:
                     self.emitir("ldr x0, [x3]")
-                    self.operar(op[0])
+                    if tipo == "String":
+                        # las rutinas de cadenas usan x3 como registro de trabajo:
+                        # la direccion del elemento se guarda en la pila durante la llamada
+                        self.emitir("str x3, [sp, #-16]!    // guardar la direccion del elemento")
+                        self.operar_generico(op[0], tipo, nodo.valor.tipo_resultado)
+                        self.emitir("ldr x3, [sp], #16")
+                    else:
+                        self.operar_generico(op[0], tipo, nodo.valor.tipo_resultado)
                 self.emitir("str x0, [x3]")
         else:
             raise NotImplementedError("destino de asignacion no soportado")
 
-    # ---- expresiones: el resultado queda siempre en x0 (o en d0 si es f64) ----
+    # ---- expresiones: el resultado queda siempre en x0 ----
     def cargar_f64(self, valor):
         """d0 = valor. Se arma el patron de 64 bits en x9 y se pasa a d0."""
         bits = struct.unpack("<Q", struct.pack("<d", valor))[0]
@@ -461,6 +515,8 @@ class GeneradorARM64:
             self.cargar_f64(nodo.valor)
         elif nodo.tipo == "i32":
             self.cargar_inmediato("x0", nodo.valor)
+        elif nodo.tipo == "String":
+            self.cargar_direccion("x0", self.nuevo_string_valor(nodo.valor))
         else:
             raise NotImplementedError(f"literales {nodo.tipo}: siguiente rebanada")
 
@@ -479,7 +535,7 @@ class GeneradorARM64:
         elif op == "*":
             self.emitir("mul x0, x0, x1")
         elif op in ("/", "%"):
-            self.usa_rt_div = True
+            self.usar("rt_div_cero")
             self.emitir("cbz x1, rt_div_cero    // division entre cero: error de ejecucion")
             if op == "/":
                 self.emitir("sdiv x0, x0, x1")
@@ -490,6 +546,44 @@ class GeneradorARM64:
             raise NotImplementedError(f"operador {op}: siguiente rebanada")
         self.emitir("sxtw x0, w0")
 
+    def operar_string(self, op, ti, td):
+        """x0 = x0 (op) x1 cuando algun operando es String (x0 = izquierdo, x1 = derecho)."""
+        if op == "+" and (ti, td) == ("String", "String"):
+            self.usar("str_concat")
+            self.emitir("bl str_concat")
+        elif op == "*" and (ti, td) == ("String", "i32"):
+            self.usar("str_repeat")
+            self.emitir("bl str_repeat")
+        elif op == "*" and (ti, td) == ("i32", "String"):
+            self.usar("str_repeat")
+            self.emitir("mov x2, x0")
+            self.emitir("mov x0, x1")
+            self.emitir("mov x1, x2")
+            self.emitir("bl str_repeat")
+        else:
+            raise NotImplementedError(f"operador {op} entre {ti} y {td}: siguiente rebanada")
+
+    def operar_generico(self, op, ti, td):
+        if "String" in (ti, td):
+            self.operar_string(op, ti, td)
+        else:
+            self.operar(op)
+
+    def binaria_string(self, nodo, ti, td):
+        op = nodo.operador
+        nodo.izquierda.aceptar(self)
+        self.emitir("str x0, [sp, #-16]!    // apilar operando izquierdo")
+        nodo.derecha.aceptar(self)
+        self.emitir("mov x1, x0")
+        self.emitir("ldr x0, [sp], #16      // recuperar operando izquierdo")
+        if op in CONDICIONES and (ti, td) == ("String", "String"):
+            self.usar("str_cmp")
+            self.emitir("bl str_cmp             // -1, 0 o 1")
+            self.emitir("cmp x0, #0")
+            self.emitir(f"cset x0, {CONDICIONES[op]}")
+        else:
+            self.operar_string(op, ti, td)
+
     def operar_f64(self, op):
         """d0 = d0 (op) d1."""
         if op == "+":
@@ -499,7 +593,7 @@ class GeneradorARM64:
         elif op == "*":
             self.emitir("fmul d0, d0, d1")
         elif op in ("/", "%"):
-            self.usa_rt_div = True
+            self.usar("rt_div_cero")
             self.emitir("fcmp d1, #0.0")
             self.emitir("b.eq rt_div_cero    // division entre cero: error de ejecucion")
             if op == "/":
@@ -542,6 +636,9 @@ class GeneradorARM64:
             return
         ti = nodo.izquierda.tipo_resultado
         td = nodo.derecha.tipo_resultado
+        if "String" in (ti, td):
+            self.binaria_string(nodo, ti, td)
+            return
         if "f64" in (ti, td):
             self.binaria_f64(nodo)
             return
@@ -596,7 +693,7 @@ class GeneradorARM64:
                 self.cargar_inmediato("x9", limite)
                 self.emitir("cmp x0, x9")
             self.emitir("b.hs rt_indice    // sin signo: tambien atrapa los negativos")
-            self.usa_rt_indice = True
+            self.usar("rt_indice")
 
     def calcular_direccion(self, nodo):
         """Deja en x0 la direccion de nodo (un acceso arr[i][j]...).
@@ -636,8 +733,33 @@ class GeneradorARM64:
             raise NotImplementedError("usar una fila completa como valor: siguiente rebanada")
         self.emitir("ldr d0, [x0]" if elemento == "f64" else "ldr x0, [x0]")
 
+    def metodo_string(self, nodo):
+        m = nodo.nombre
+        self.comentario(f"String.{m}()")
+        if m == "len":
+            nodo.objeto.aceptar(self)
+            self.emitir("ldr x0, [x0]           // la longitud esta en el encabezado")
+        elif m == "contains":
+            self.evaluar_en_registros([nodo.objeto] + nodo.argumentos)
+            self.usar("str_contains")
+            self.emitir("bl str_contains")
+        elif m in ("to_uppercase", "to_lowercase"):
+            rutina = "str_upper" if m == "to_uppercase" else "str_lower"
+            nodo.objeto.aceptar(self)
+            self.usar(rutina)
+            self.emitir(f"bl {rutina}")
+        elif m == "replace":
+            self.evaluar_en_registros([nodo.objeto] + nodo.argumentos)
+            self.usar("str_replace")
+            self.emitir("bl str_replace")
+        else:
+            raise NotImplementedError(f"String.{m}(): siguiente rebanada")
+
     def visitar_LlamadaMetodo(self, nodo):
         tipo = nodo.objeto.tipo_resultado
+        if tipo == "String":
+            self.metodo_string(nodo)
+            return
         elemento, dims = dims_arreglo(tipo)
         if dims and nodo.nombre == "len":
             # los arreglos tienen tamano fijo: la longitud se conoce al compilar
@@ -757,9 +879,25 @@ class GeneradorARM64:
         self.salir_scope()
 
     # ---- println! ----
+    def imprimir_valor(self, arg):
+        """Evalua arg y lo imprime segun su tipo (sin salto de linea)."""
+        arg.aceptar(self)
+        rutina = {"i32": "print_int", "bool": "print_bool", "char": "print_char",
+                  "f64": "print_f64", "String": "print_string"}.get(arg.tipo_resultado)
+        if rutina is None:
+            raise NotImplementedError(f"imprimir valores {arg.tipo_resultado}: siguiente rebanada")
+        self.usar(rutina)
+        self.emitir(f"bl {rutina}")
+
     def visitar_LlamadaPrintln(self, nodo):
         if nodo.formato is None:
-            raise NotImplementedError("println! sin cadena de formato: siguiente rebanada")
+            # println!(valor): sin cadena de formato, se imprimen los argumentos
+            for i, arg in enumerate(nodo.argumentos):
+                if i > 0:
+                    self.escribir_texto(" ")
+                self.imprimir_valor(arg)
+            self.escribir_texto("\n")
+            return
         partes = nodo.formato.split("{}")
         if len(partes) - 1 != len(nodo.argumentos):
             raise RuntimeError("marcadores y argumentos no coinciden")
@@ -769,19 +907,4 @@ class GeneradorARM64:
             if texto:
                 self.escribir_texto(texto)
             if not ultimo:
-                arg = nodo.argumentos[i]
-                arg.aceptar(self)
-                if arg.tipo_resultado == "i32":
-                    self.usa_print_int = True
-                    self.emitir("bl print_int")
-                elif arg.tipo_resultado == "bool":
-                    self.usa_print_bool = True
-                    self.emitir("bl print_bool")
-                elif arg.tipo_resultado == "char":
-                    self.usa_print_char = True
-                    self.emitir("bl print_char")
-                elif arg.tipo_resultado == "f64":
-                    self.usa_print_f64 = True
-                    self.emitir("bl print_f64")
-                else:
-                    raise NotImplementedError(f"imprimir valores {arg.tipo_resultado}: siguiente rebanada")
+                self.imprimir_valor(nodo.argumentos[i])
