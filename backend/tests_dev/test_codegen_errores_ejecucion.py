@@ -63,3 +63,11 @@ fn main() {
     println!("{}", 1.0 / z);
 }
 ''', "antes\nError de ejecución: división entre cero\n", 1)
+
+correr("memoria insuficiente", '''
+fn main() {
+    println!("antes");
+    let g = "x" * 100000000;
+    println!("despues");
+}
+''', "antes\nError de ejecución: memoria insuficiente\n", 1)
