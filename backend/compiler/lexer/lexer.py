@@ -1,3 +1,4 @@
+import re
 import ply.lex as lex
 from compiler.errors import agregar_error, encontrar_columna
 
@@ -54,6 +55,17 @@ tokens = [
 ] + list(reservadas.values())
 
 
+# Raw strings:
+def t_RAW_STRING(t):
+    r'r(?:\#\#"(?:.|\n)*?"\#\#|\#"(?:.|\n)*?"\#|"[^"]*")'
+    texto = t.value[1:]                      # sin la 'r'
+    almohadillas = len(texto) - len(texto.lstrip('#'))
+    t.value = texto[almohadillas + 1: len(texto) - 1 - almohadillas]
+    t.lexer.lineno += texto.count('\n')
+    t.type = 'STRING'
+    return t
+
+
 # Identificadores
 def t_IDENTIFICADOR(t):
     r'[a-zA-Z_][a-zA-Z0-9_]*'
@@ -92,12 +104,17 @@ def t_NUMERO_ENTERO(t):
     return t
 
 
-# Strings 
+# Strings
+ESCAPES = {'n': '\n', 't': '\t', 'r': '\r', '0': '\0', '\\': '\\', '"': '"', "'": "'"}
+
+def procesar_escapes(texto):
+    """Convierte \\n, \\t, \\r, \\0, \\\\, \\" y \\' recorriendo el texto de izquierda a derecha."""
+    return re.sub(r'\\(.)', lambda m: ESCAPES.get(m.group(1), m.group(0)), texto, flags=re.S)
+
 def t_STRING(t):
-    r'"([^"\\]|\\.)*"'
-    contenido = t.value[1:-1]
-    contenido = contenido.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
-    t.value = contenido
+    r'"([^"\\]|\\(.|\n))*"'
+    t.lexer.lineno += t.value.count('\n')
+    t.value = procesar_escapes(t.value[1:-1])
     return t
 
 # Chars (un solo carácter entre comillas simples)
