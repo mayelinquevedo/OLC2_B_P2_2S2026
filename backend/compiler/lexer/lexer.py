@@ -17,6 +17,7 @@ reservadas = {
     'continue': 'CONTINUE',
     'true': 'TRUE',
     'false': 'FALSE',
+    '_': 'COMODIN',
 
     # tipos del lenguaje
     'i32': 'TIPO_I32',

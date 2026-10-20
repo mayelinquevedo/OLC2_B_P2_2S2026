@@ -74,6 +74,17 @@ def p_tipo_arreglo(p):
     'tipo : CORCH_IZQ tipo PUNTO_COMA NUMERO_ENTERO CORCH_DER'
     p[0] = f"[{p[2]}; {p[4]}]"
 
+def p_tipo_slice(p):
+    'tipo : AMPER CORCH_IZQ tipo CORCH_DER'
+    p[0] = f"&[{p[3]}]"
+
+
+def p_tipo_vec_str(p):
+    'tipo : IDENTIFICADOR MENORQUE AMPER IDENTIFICADOR MAYORQUE'
+    if p[1] != 'Vec' or p[4] != 'str':
+        agregar_error("Sintactico", f"Tipo desconocido '{p[1]}<&{p[4]}>'", p.lineno(1), col(p, 1))
+    p[0] = "&[String]"
+
 def p_lista_parametros_opt_con(p):
     'lista_parametros_opt : lista_parametros'
     p[0] = p[1]
@@ -243,11 +254,19 @@ def p_loop_stmt_con_etiqueta(p):
     p[0] = Loop(bloque=p[4], etiqueta=p[1], **pos(p, 1))
 
 
-
-# match 
 def p_match_stmt(p):
     'match_stmt : MATCH expresion LLAVE_IZQ lista_casos LLAVE_DER'
     p[0] = Match(expresion=p[2], casos=p[4], **pos(p, 1))
+
+
+def p_match_stmt_caso_final(p):
+    'match_stmt : MATCH expresion LLAVE_IZQ lista_casos caso_final LLAVE_DER'
+    p[0] = Match(expresion=p[2], casos=p[4] + [p[5]], **pos(p, 1))
+
+
+def p_match_stmt_solo_final(p):
+    'match_stmt : MATCH expresion LLAVE_IZQ caso_final LLAVE_DER'
+    p[0] = Match(expresion=p[2], casos=[p[4]], **pos(p, 1))
 
 
 def p_lista_casos_uno(p):
@@ -260,18 +279,39 @@ def p_lista_casos_varios(p):
     p[0] = p[1] + [p[2]]
 
 
-def p_caso_expresion(p):
-    'caso : expresion FLECHA_MATCH bloque_o_expresion COMA'
-    p[0] = CasoMatch(patron=p[1], bloque=p[3],
-                     linea=p[1].linea, columna=p[1].columna)
+def p_caso(p):
+    '''caso : caso_con_coma
+            | caso_bloque'''
+    p[0] = p[1]
 
 
-def p_caso_comodin(p):
-    'caso : IDENTIFICADOR FLECHA_MATCH bloque_o_expresion COMA'
-    if p[1] != '_':
-        agregar_error("Sintactico", f"Se esperaba un patron valido o '_', se obtuvo '{p[1]}'", p.lineno(1))
-    p[0] = CasoMatch(patron=None, bloque=p[3], **pos(p, 1))
+# "patron => cuerpo ,"   (el cuerpo puede ser expresion o bloque)
+def p_caso_con_coma(p):
+    'caso_con_coma : patron FLECHA_MATCH bloque_o_expresion COMA'
+    p[0] = CasoMatch(patron=p[1], bloque=p[3], linea=p[3].linea, columna=p[3].columna)
 
+
+# ultimo caso sin coma:  "patron => expresion }"
+def p_caso_final(p):
+    'caso_final : patron FLECHA_MATCH expresion'
+    p[0] = CasoMatch(patron=p[1], bloque=Bloque([p[3]], linea=p[3].linea, columna=p[3].columna),
+                     linea=p[3].linea, columna=p[3].columna)
+
+
+# "patron => { ... }"  sin coma (como en Rust)
+def p_caso_bloque(p):
+    'caso_bloque : patron FLECHA_MATCH bloque'
+    p[0] = CasoMatch(patron=p[1], bloque=p[3], linea=p[3].linea, columna=p[3].columna)
+
+
+def p_patron_expresion(p):
+    'patron : expresion'
+    p[0] = p[1]
+
+
+def p_patron_comodin(p):
+    'patron : COMODIN'
+    p[0] = None
 
 def p_bloque_o_expresion_bloque(p):
     'bloque_o_expresion : bloque'
@@ -454,16 +494,54 @@ def p_empty(p):
     'empty :'
     pass
 
-# Manejo de errores sintácticos 
-def p_error(p):
-    if p:
-        agregar_error(
-            "Sintactico",
-            f"Error de sintaxis cerca de '{p.value}'",
-            p.lineno,
-            encontrar_columna(p.lexer.lexdata, p.lexpos)
-        )
-    else:
-        agregar_error("Sintactico", "Fin de archivo inesperado", 0)
+# Manejo de errores sintácticos
+SIMBOLOS = {'PUNTO_COMA': ';', 'PAREN_DER': ')', 'CORCH_DER': ']', 'LLAVE_DER': '}',
+            'LLAVE_IZQ': '{', 'PAREN_IZQ': '(', 'COMA': ',', 'DOS_PUNTOS': ':', 'IGUAL': '='}
+PRIORIDAD_ESPERADOS = ['PUNTO_COMA', 'PAREN_DER', 'CORCH_DER', 'LLAVE_DER']
 
+
+def _fin_del_token_anterior(texto, lexpos):
+    """(linea, columna) justo despues del ultimo caracter que no es espacio antes de lexpos."""
+    pos = lexpos
+    while pos > 0 and texto[pos - 1] in ' \t\r\n':
+        pos -= 1
+    linea = texto.count('\n', 0, pos) + 1
+    return linea, encontrar_columna(texto, pos) if pos < len(texto) else pos - (texto.rfind('\n', 0, pos) + 1) + 1
+
+
+def _esperados():
+    """Simbolos que el parser habria aceptado en el estado donde fallo."""
+    try:
+        return set(parser.action[parser.statestack[-1]].keys())
+    except Exception:
+        return set()
+
+
+def p_error(p):
+    texto = lexer_actual().lexdata if p is None else p.lexer.lexdata
+    esperados = _esperados()
+    cerrador = next((t for t in PRIORIDAD_ESPERADOS if t in esperados), None)
+
+    if p is None:                                       # fin de archivo
+        linea, columna = _fin_del_token_anterior(texto, len(texto))
+        if cerrador:
+            agregar_error("Sintactico", f"Se esperaba '{SIMBOLOS[cerrador]}'.", linea, columna)
+        else:
+            agregar_error("Sintactico", "Fin de archivo inesperado.", linea, columna)
+        return
+
+    prev_linea, prev_col = _fin_del_token_anterior(texto, p.lexpos)
+    en_otra_linea = prev_linea != p.lineno
+    if cerrador and (en_otra_linea or cerrador == 'PUNTO_COMA'):
+        # falta un ';' (o un cierre): se senala justo despues del ultimo token valido
+        linea, columna = (prev_linea, prev_col) if en_otra_linea else (p.lineno, encontrar_columna(texto, p.lexpos))
+        agregar_error("Sintactico", f"Se esperaba '{SIMBOLOS[cerrador]}'.", linea, columna)
+    else:
+        agregar_error("Sintactico", f"Error de sintaxis cerca de '{p.value}'",
+                      p.lineno, encontrar_columna(texto, p.lexpos))
+
+
+def lexer_actual():
+    from compiler.lexer.lexer import lexer
+    return lexer
 parser = yacc.yacc()
