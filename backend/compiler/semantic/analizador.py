@@ -1,6 +1,7 @@
 from compiler.errors import agregar_error
 from compiler.semantic.tabla_simbolos import TablaSimbolos, Simbolo
 from compiler.ast.nodos import Identificador, AccesoIndice, Literal
+from compiler.formato import partir_formato, contar_marcadores
 
 NUMERICOS = ('i32', 'f64')
 
@@ -220,7 +221,11 @@ class AnalizadorSemantico:
         for a in nodo.argumentos:
             a.aceptar(self)
         if nodo.formato is not None:
-            marcadores = nodo.formato.count('{}') + nodo.formato.count('{:?}')
+            try:
+                marcadores = contar_marcadores(partir_formato(nodo.formato))
+            except ValueError as e:
+                self.error(nodo, f"Cadena de formato inválida en println!: {e}.")
+                return 'void'
             if marcadores != len(nodo.argumentos):
                 self.error(nodo, f"println! tiene {marcadores} marcadores pero recibió {len(nodo.argumentos)} argumentos.")
         return 'void'

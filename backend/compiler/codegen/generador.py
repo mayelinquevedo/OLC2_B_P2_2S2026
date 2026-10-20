@@ -4,6 +4,7 @@ from math import prod
 from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal
 from compiler.codegen.rutinas import (RUTINAS, DEPENDENCIAS, MENSAJES_ERROR,
                                       ORDEN_RUTINAS, HEAP_BYTES)
+from compiler.formato import partir_formato
 
 CONDICIONES = {"==": "eq", "!=": "ne", "<": "lt", ">": "gt", "<=": "le", ">=": "ge"}
 # para fcmp: "menor que" es mi y "menor o igual" es ls (asi se comporta bien con NaN)
@@ -21,6 +22,25 @@ def codigo_char(valor):
         return ESCAPES_CHAR[valor[1]]
     return ord(valor)
 
+
+# rutina "pe_*" que imprime un elemento (por su direccion) segun el tipo del elemento
+RUTINA_ELEMENTO = {"i32": "pe_i32", "bool": "pe_bool", "char": "pe_char",
+                   "f64": "pe_f64", "String": "pe_str"}
+MODO_CONTAINS = {"f64": 1, "String": 2}      # 0 = entero/bool/char
+
+
+def es_slice(tipo):
+    """'&[i32]' -> True. Un slice es un puntero (x0) a un descriptor [longitud][datos]."""
+    return isinstance(tipo, str) and tipo.startswith("&[")
+
+
+def es_arreglo(tipo):
+    return bool(dims_arreglo(tipo)[1])
+
+
+def es_valor(tipo):
+    """Tipos que viajan en un registro y ocupan un solo slot de 8 bytes."""
+    return tipo in TIPOS_ESCALARES or es_slice(tipo)
 
 MAX_PARAMETROS = 8
 BYTES_ELEMENTO = 8
@@ -310,6 +330,19 @@ class GeneradorARM64:
                 raise NotImplementedError(f"retornar {nodo.valor.tipo_resultado}: siguiente rebanada")
             nodo.valor.aceptar(self)      # el valor queda en x0 (o en d0 si es f64)
         self.emitir(f"b {self.etiqueta_retorno}")
+
+
+    def direccion_de_arreglo(self, expr):
+        """Deja en x0 la direccion del primer elemento de un arreglo (variable o fila de una matriz)."""
+        if isinstance(expr, Identificador):
+            offset, _ = self.buscar_variable(expr.nombre)
+            self.direccion_local("x0", offset)
+        elif isinstance(expr, AccesoIndice):
+            _, restantes = self.calcular_direccion(expr)
+            if not restantes:
+                raise RuntimeError("se esperaba un arreglo y se obtuvo un elemento")
+        else:
+            raise NotImplementedError("usar este arreglo como valor: guardelo primero en una variable")
 
     # ---- llamadas a funciones del usuario ----
     def registros_de(self, tipos):
@@ -877,15 +910,74 @@ class GeneradorARM64:
                 self.etiqueta(siguiente)
         self.etiqueta(fin)
         self.salir_scope()
-
     # ---- println! ----
-    def imprimir_valor(self, arg):
-        """Evalua arg y lo imprime segun su tipo (sin salto de linea)."""
+    def imprimir_slice(self, elemento):
+        """x0 = descriptor del slice -> imprime [a, b, c]"""
+        if elemento not in RUTINA_ELEMENTO:
+            raise NotImplementedError(f"imprimir slices de {elemento}: siguiente rebanada")
+        rutina = RUTINA_ELEMENTO[elemento]
+        self.usar(rutina)
+        self.usar("print_arr")
+        self.emitir("ldr x1, [x0]           // cantidad de elementos")
+        self.emitir("ldr x0, [x0, #8]       // direccion del primer elemento")
+        self.emitir(f"adrp x2, {rutina}")
+        self.emitir(f"add x2, x2, :lo12:{rutina}")
+        self.emitir("bl print_arr")
+
+    def imprimir_estatico(self, elemento, dims):
+        """x0 = direccion de un arreglo (row-major) -> imprime [[1, 2], [3, 4]]"""
+        if elemento not in RUTINA_ELEMENTO:
+            raise NotImplementedError(f"imprimir arreglos de {elemento}: siguiente rebanada")
+        if len(dims) == 1:
+            rutina = RUTINA_ELEMENTO[elemento]
+            self.usar(rutina)
+            self.usar("print_arr")
+            self.cargar_inmediato("x1", dims[0])
+            self.emitir(f"adrp x2, {rutina}")
+            self.emitir(f"add x2, x2, :lo12:{rutina}")
+            self.emitir("bl print_arr")
+            return
+        paso = prod(dims[1:]) * BYTES_ELEMENTO       # bytes que ocupa cada sub-arreglo
+        self.emitir("str x0, [sp, #-16]!    // apilar la direccion base")
+        self.escribir_texto("[")
+        for k in range(dims[0]):
+            if k > 0:
+                self.escribir_texto(", ")
+            self.emitir("ldr x0, [sp]")
+            if k > 0:
+                self.cargar_inmediato("x9", k * paso)
+                self.emitir("add x0, x0, x9")
+            self.imprimir_estatico(elemento, dims[1:])
+        self.escribir_texto("]")
+        self.emitir("add sp, sp, #16")
+
+    def imprimir_valor(self, arg, debug=False):
+        """Evalua arg y lo imprime segun su tipo (sin salto de linea).
+        Los arreglos y slices siempre se muestran como [a, b, c]."""
+        tipo = arg.tipo_resultado
+        if es_slice(tipo):
+            arg.aceptar(self)
+            self.imprimir_slice(tipo[2:-1])
+            return
+        elemento, dims = dims_arreglo(tipo)
+        if dims:
+            self.direccion_de_arreglo(arg)
+            self.imprimir_estatico(elemento, dims)
+            return
         arg.aceptar(self)
+        if debug and tipo in ("String", "char"):
+            # {:?}: String entre "..." y char entre '...'  (las rutinas pe_* reciben una direccion)
+            rutina = RUTINA_ELEMENTO[tipo]
+            self.usar(rutina)
+            self.emitir("str x0, [sp, #-16]!")
+            self.emitir("mov x0, sp")
+            self.emitir(f"bl {rutina}")
+            self.emitir("add sp, sp, #16")
+            return
         rutina = {"i32": "print_int", "bool": "print_bool", "char": "print_char",
-                  "f64": "print_f64", "String": "print_string"}.get(arg.tipo_resultado)
+                  "f64": "print_f64", "String": "print_string"}.get(tipo)
         if rutina is None:
-            raise NotImplementedError(f"imprimir valores {arg.tipo_resultado}: siguiente rebanada")
+            raise NotImplementedError(f"imprimir valores {tipo}: siguiente rebanada")
         self.usar(rutina)
         self.emitir(f"bl {rutina}")
 
@@ -898,13 +990,17 @@ class GeneradorARM64:
                 self.imprimir_valor(arg)
             self.escribir_texto("\n")
             return
-        partes = nodo.formato.split("{}")
-        if len(partes) - 1 != len(nodo.argumentos):
+        piezas = partir_formato(nodo.formato)
+        if sum(1 for tipo, _ in piezas if tipo == "arg") != len(nodo.argumentos):
             raise RuntimeError("marcadores y argumentos no coinciden")
-        for i, parte in enumerate(partes):
-            ultimo = (i == len(partes) - 1)
-            texto = parte + ("\n" if ultimo else "")
-            if texto:
-                self.escribir_texto(texto)
-            if not ultimo:
-                self.imprimir_valor(nodo.argumentos[i])
+        argumentos = iter(nodo.argumentos)
+        pendiente = ""
+        for tipo, valor in piezas:
+            if tipo == "txt":
+                pendiente += valor
+                continue
+            if pendiente:
+                self.escribir_texto(pendiente)
+                pendiente = ""
+            self.imprimir_valor(next(argumentos), debug=valor)
+        self.escribir_texto(pendiente + "\n")
