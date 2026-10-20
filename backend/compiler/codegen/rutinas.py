@@ -623,6 +623,280 @@ RUTINA_RANDOM = """rt_random:
     ret
 """
 
+# ---------------------------------------------------------------------------
+#  Arreglos y slices en ejecucion
+#  Un slice (&[T]) es un puntero a un descriptor de 16 bytes en el heap:
+#        [ longitud: 8 bytes ][ puntero al primer elemento: 8 bytes ]
+#  Todos los elementos ocupan 8 bytes (como en el stack).
+# ---------------------------------------------------------------------------
+
+# Rutinas "pe_*": imprimen UN elemento a partir de su direccion (x0), en formato Debug.
+RUTINA_PE_I32 = """pe_i32:
+    ldr x0, [x0]
+    b print_int
+"""
+
+RUTINA_PE_BOOL = """pe_bool:
+    ldr x0, [x0]
+    b print_bool
+"""
+
+RUTINA_PE_F64 = """pe_f64:
+    ldr d0, [x0]
+    b print_f64
+"""
+
+RUTINA_PE_CHAR = """pe_char:
+    # imprime el char apuntado por x0 entre comillas simples
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    str x0, [sp, #16]
+    mov x0, #39
+    bl print_char
+    ldr x0, [sp, #16]
+    ldr x0, [x0]
+    bl print_char
+    mov x0, #39
+    bl print_char
+    ldp x29, x30, [sp], #32
+    ret
+"""
+
+RUTINA_PE_STR = """pe_str:
+    # imprime el String apuntado por x0 entre comillas dobles
+    stp x29, x30, [sp, #-32]!
+    mov x29, sp
+    str x0, [sp, #16]
+    mov x0, #34
+    bl print_char
+    ldr x0, [sp, #16]
+    ldr x0, [x0]
+    bl print_string
+    mov x0, #34
+    bl print_char
+    ldp x29, x30, [sp], #32
+    ret
+"""
+
+RUTINA_PRINT_ARR = """print_arr:
+    # x0 = direccion del primer elemento, x1 = cantidad, x2 = rutina pe_* del elemento
+    # imprime  [a, b, c]
+    stp x29, x30, [sp, #-48]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    mov x19, x0
+    mov x20, x1
+    mov x21, x2
+    mov x22, #0
+    mov x0, #91
+    bl print_char
+1:
+    cmp x22, x20
+    b.hs 3f
+    cbz x22, 2f
+    mov x0, #44
+    bl print_char
+    mov x0, #32
+    bl print_char
+2:
+    add x0, x19, x22, lsl #3
+    blr x21
+    add x22, x22, #1
+    b 1b
+3:
+    mov x0, #93
+    bl print_char
+    ldp x19, x20, [sp, #16]
+    ldp x21, x22, [sp, #32]
+    ldp x29, x30, [sp], #48
+    ret
+"""
+
+RUTINA_ARR_CONTAINS = """arr_contains:
+    # x0 = direccion del primer elemento, x1 = cantidad, x2 = valor buscado
+    # x3 = modo (0 = entero/bool/char, 1 = f64, 2 = String)  ->  x0 = 1 si esta, 0 si no
+    stp x29, x30, [sp, #-48]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    mov x19, x0
+    mov x20, x1
+    mov x21, x2
+    mov x22, x3
+1:
+    cbz x20, 8f
+    ldr x4, [x19]
+    cmp x22, #1
+    b.eq 3f
+    b.hi 4f
+    cmp x4, x21
+    b.eq 7f
+    b 5f
+3:
+    fmov d0, x4
+    fmov d1, x21
+    fcmp d0, d1
+    b.eq 7f
+    b 5f
+4:
+    mov x0, x4
+    mov x1, x21
+    bl str_cmp
+    cbz x0, 7f
+5:
+    add x19, x19, #8
+    sub x20, x20, #1
+    b 1b
+7:
+    mov x0, #1
+    b 9f
+8:
+    mov x0, #0
+9:
+    ldp x19, x20, [sp, #16]
+    ldp x21, x22, [sp, #32]
+    ldp x29, x30, [sp], #48
+    ret
+"""
+
+RUTINA_ARR_QUITAR_VACIOS = """arr_quitar_vacios:
+    # x0 = descriptor de un arreglo de String: elimina (en el mismo lugar) las cadenas vacias
+    ldr x1, [x0]
+    ldr x2, [x0, #8]
+    mov x3, #0
+    mov x4, #0
+1:
+    cmp x3, x1
+    b.hs 3f
+    ldr x5, [x2, x3, lsl #3]
+    ldr x6, [x5]
+    cbz x6, 2f
+    str x5, [x2, x4, lsl #3]
+    add x4, x4, #1
+2:
+    add x3, x3, #1
+    b 1b
+3:
+    str x4, [x0]
+    ret
+"""
+
+# split: nota -> durante las llamadas a heap_alloc solo se conservan x9, x10 y x15
+# (heap_alloc unicamente modifica x0-x5), ademas de los registros callee-saved.
+RUTINA_STR_SPLIT = """str_split:
+    # x0 = cadena, x1 = separador -> x0 = descriptor de un arreglo de String
+    # separador vacio: una sola pieza (la cadena completa)
+    stp x29, x30, [sp, #-96]!
+    mov x29, sp
+    stp x19, x20, [sp, #16]
+    stp x21, x22, [sp, #32]
+    stp x23, x24, [sp, #48]
+    stp x25, x26, [sp, #64]
+    stp x27, x28, [sp, #80]
+    mov x19, x0
+    mov x20, x1
+    ldr x21, [x19]
+    ldr x22, [x20]
+    add x23, x19, #8
+    add x24, x20, #8
+    mov x25, #1
+    cbz x22, 20f
+    mov x9, #0
+11:
+    add x10, x9, x22
+    cmp x10, x21
+    b.hi 20f
+    mov x11, #0
+12:
+    cmp x11, x22
+    b.hs 13f
+    add x12, x9, x11
+    ldrb w13, [x23, x12]
+    ldrb w14, [x24, x11]
+    cmp w13, w14
+    b.ne 14f
+    add x11, x11, #1
+    b 12b
+13:
+    add x25, x25, #1
+    add x9, x9, x22
+    b 11b
+14:
+    add x9, x9, #1
+    b 11b
+20:
+    lsl x0, x25, #3
+    add x0, x0, #16
+    bl heap_alloc
+    mov x26, x0
+    str x25, [x26]
+    add x0, x26, #16
+    str x0, [x26, #8]
+    mov x9, #0
+    mov x10, #0
+    mov x15, #0
+30:
+    cbz x22, 38f
+    add x11, x9, x22
+    cmp x11, x21
+    b.hi 38f
+    mov x12, #0
+31:
+    cmp x12, x22
+    b.hs 33f
+    add x13, x9, x12
+    ldrb w14, [x23, x13]
+    ldrb w13, [x24, x12]
+    cmp w14, w13
+    b.ne 32f
+    add x12, x12, #1
+    b 31b
+32:
+    add x9, x9, #1
+    b 30b
+33:
+    mov x27, x9
+    mov x28, #0
+    b 50f
+38:
+    mov x27, x21
+    mov x28, #1
+50:
+    sub x6, x27, x10
+    add x0, x6, #8
+    bl heap_alloc
+    sub x6, x27, x10
+    str x6, [x0]
+    add x7, x0, #8
+    add x2, x23, x10
+    mov x3, #0
+51:
+    cmp x3, x6
+    b.hs 52f
+    ldrb w4, [x2, x3]
+    strb w4, [x7, x3]
+    add x3, x3, #1
+    b 51b
+52:
+    ldr x4, [x26, #8]
+    str x0, [x4, x15, lsl #3]
+    add x15, x15, #1
+    cbnz x28, 60f
+    add x9, x27, x22
+    mov x10, x9
+    b 30b
+60:
+    mov x0, x26
+    ldp x19, x20, [sp, #16]
+    ldp x21, x22, [sp, #32]
+    ldp x23, x24, [sp, #48]
+    ldp x25, x26, [sp, #64]
+    ldp x27, x28, [sp, #80]
+    ldp x29, x30, [sp], #96
+    ret
+"""
+
 # ---- tabla de rutinas: nombre -> texto, y sus dependencias ----
 RUTINAS = {
     "print_int": RUTINA_PRINT_INT, "print_bool": RUTINA_PRINT_BOOL,
@@ -632,12 +906,19 @@ RUTINAS = {
     "str_cmp": RUTINA_STR_CMP, "str_upper": RUTINA_STR_UPPER,
     "str_lower": RUTINA_STR_LOWER, "str_contains": RUTINA_STR_CONTAINS,
     "str_replace": RUTINA_STR_REPLACE, "rt_random": RUTINA_RANDOM,
+    "pe_i32": RUTINA_PE_I32, "pe_bool": RUTINA_PE_BOOL, "pe_f64": RUTINA_PE_F64,
+    "pe_char": RUTINA_PE_CHAR, "pe_str": RUTINA_PE_STR, "print_arr": RUTINA_PRINT_ARR,
+    "arr_contains": RUTINA_ARR_CONTAINS, "arr_quitar_vacios": RUTINA_ARR_QUITAR_VACIOS,
+    "str_split": RUTINA_STR_SPLIT,
 }
 DEPENDENCIAS = {
     "heap_alloc": ["rt_memoria"],
     "str_concat": ["heap_alloc"], "str_repeat": ["heap_alloc"],
     "str_upper": ["heap_alloc"], "str_lower": ["heap_alloc"],
-    "str_replace": ["heap_alloc"],
+    "str_replace": ["heap_alloc"], "str_split": ["heap_alloc"],
+    "pe_i32": ["print_int"], "pe_bool": ["print_bool"], "pe_f64": ["print_f64"],
+    "pe_char": ["print_char"], "pe_str": ["print_string", "print_char"],
+    "print_arr": ["print_char"], "arr_contains": ["str_cmp"],
 }
 # rutinas que imprimen un mensaje y terminan con codigo 1
 MENSAJES_ERROR = {
@@ -648,4 +929,6 @@ MENSAJES_ERROR = {
 ORDEN_RUTINAS = ["print_int", "print_bool", "print_char", "print_f64", "print_string",
                  "heap_alloc", "str_concat", "str_repeat", "str_cmp", "str_upper",
                  "str_lower", "str_contains", "str_replace", "rt_random",
+                 "pe_i32", "pe_bool", "pe_f64", "pe_char", "pe_str", "print_arr",
+                 "arr_contains", "arr_quitar_vacios", "str_split",
                  "rt_div_cero", "rt_indice", "rt_memoria"]
