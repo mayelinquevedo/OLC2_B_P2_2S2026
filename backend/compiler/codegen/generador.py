@@ -852,26 +852,70 @@ class GeneradorARM64:
             self.evaluar_en_registros([nodo.objeto] + nodo.argumentos)
             self.usar("str_replace")
             self.emitir("bl str_replace")
+        elif m == "split":
+            self.evaluar_en_registros([nodo.objeto] + nodo.argumentos)
+            self.usar("str_split")
+            self.emitir("bl str_split           // x0 = arreglo de String")
+        elif m == "split_whitespace":
+            nodo.objeto.aceptar(self)
+            self.cargar_direccion("x1", self.nuevo_string_valor(" "))
+            self.usar("str_split")
+            self.emitir("bl str_split")
+            self.usar("arr_quitar_vacios")
+            self.emitir("bl arr_quitar_vacios   // descarta las piezas vacias")            
         else:
             raise NotImplementedError(f"String.{m}(): siguiente rebanada")
             
+
     def metodo_slice(self, nodo, tipo):
         m = nodo.nombre
         if m == "len":
             self.comentario("slice.len()")
             nodo.objeto.aceptar(self)
             self.emitir("ldr x0, [x0]           // la longitud esta en el descriptor")
+        elif m == "collect":
+            nodo.objeto.aceptar(self)           # no hace nada: ya es una coleccion
+        elif m == "contains":
+            self.metodo_contains(nodo, tipo, tipo[2:-1], None)
         else:
             raise NotImplementedError(f"metodo {m} sobre {tipo}: siguiente rebanada")
+
+    def metodo_contains(self, nodo, tipo, elemento, dims):
+        """arreglo.contains(v) / slice.contains(v): recorre los elementos en ejecucion."""
+        if elemento not in TIPOS_ESCALARES:
+            raise NotImplementedError("contains sobre arreglos de arreglos: siguiente rebanada")
+        modo = MODO_CONTAINS.get(elemento, 0)
+        self.comentario(f"{tipo}.contains()")
+        nodo.argumentos[0].aceptar(self)
+        if modo == 1:
+            self.emitir("fmov x0, d0            // patron de bits del f64 buscado")
+        self.emitir("str x0, [sp, #-16]!    // apilar el valor buscado")
+        if dims is None:                         # slice: descriptor [longitud][datos]
+            nodo.objeto.aceptar(self)
+            self.emitir("ldr x1, [x0]           // x1 = cantidad")
+            self.emitir("ldr x0, [x0, #8]       // x0 = primer elemento")
+        else:                                    # arreglo en el stack
+            if len(dims) != 1 or not isinstance(nodo.objeto, Identificador):
+                raise NotImplementedError("contains sobre matrices: siguiente rebanada")
+            offset, _ = self.buscar_variable(nodo.objeto.nombre)
+            self.direccion_local("x0", offset)
+            self.cargar_inmediato("x1", dims[0])
+        self.emitir("ldr x2, [sp], #16      // x2 = valor buscado")
+        self.emitir(f"mov x3, #{modo}")
+        self.usar("arr_contains")
+        self.emitir("bl arr_contains")
 
     def visitar_LlamadaMetodo(self, nodo):
         tipo = nodo.objeto.tipo_resultado
         if tipo == "String":
             self.metodo_string(nodo)
             return
-        elemento, dims = dims_arreglo(tipo)
         if es_slice(tipo):
             self.metodo_slice(nodo, tipo)
+            return
+        elemento, dims = dims_arreglo(tipo)
+        if dims and nodo.nombre == "contains":
+            self.metodo_contains(nodo, tipo, elemento, dims)
             return
         if dims and nodo.nombre == "len":
             # los arreglos tienen tamano fijo: la longitud se conoce al compilar

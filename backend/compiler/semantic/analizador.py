@@ -365,6 +365,12 @@ class AnalizadorSemantico:
             if aridad(1) and args[0] not in (None, 'String'):
                 self.error(nodo, "split espera un argumento de tipo String.")
             return '&[String]'
+        if es_str and m == 'split_whitespace':
+            aridad(0)
+            return '&[String]'
+        if t == '&[String]' and m == 'collect':      # texto.split_whitespace().collect()
+            aridad(0)
+            return t            
         if info and m == 'reverse':
             aridad(0)
             raiz = self._raiz(nodo.objeto)
