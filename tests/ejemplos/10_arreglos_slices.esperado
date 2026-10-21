@@ -1,0 +1,14 @@
+Primer elemento: 10
+Tercer elemento: 30
+Longitud de numeros: 5
+Longitud de edades: 3
+
+Elementos de numeros:
+10
+20
+30
+40
+50
+
+Slice: [20, 30, 40]
+Primera edad: 18

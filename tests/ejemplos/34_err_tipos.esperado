@@ -1,0 +1,2 @@
+[Semantico] Linea 2, Columna 17: No es posible asignar un valor de tipo String a una variable de tipo i32.
+[Semantico] Linea 4, Columna 11: No es posible aplicar el operador '+' entre los tipos i32 y String.

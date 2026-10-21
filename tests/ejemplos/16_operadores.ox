@@ -1,0 +1,31 @@
+fn main() {
+    let a: i32 = 17;
+    let b: i32 = 5;
+    println!("{}", a + b);
+    println!("{}", a - b);
+    println!("{}", a * b);
+    println!("{}", a / b);
+    println!("{}", a % b);
+    println!("{}", -a);
+    let x: f64 = 7.5;
+    let y: f64 = 2.0;
+    println!("{}", x + y);
+    println!("{}", x - y);
+    println!("{}", x * y);
+    println!("{}", x / y);
+    println!("{}", x % y);
+    println!("{}", a + x);
+    println!("{}", a / y);
+    println!("{}", -x);
+    let s = String::from("ab");
+    println!("{}", 3 * s);
+    println!("{}", s * 2);
+    let t = String::from("x") + String::from("y");
+    println!("{}", t);
+    let mut z = 10;
+    z += 5; println!("{}", z);
+    z -= 3; println!("{}", z);
+    z *= 2; println!("{}", z);
+    z /= 4; println!("{}", z);
+    z %= 4; println!("{}", z);
+}

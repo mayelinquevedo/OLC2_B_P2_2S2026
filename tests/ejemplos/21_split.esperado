@@ -1,0 +1,12 @@
+4
+desde
+["Hola", "Mundo", "desde", "Rust"]
+Hola
+Mundo
+desde
+Rust
+["a", "", "b", ""]
+["a,,b,"]
+["a", "b"]
+true
+["uno", "dos", "tres"]
