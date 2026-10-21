@@ -301,8 +301,17 @@ class GeneradorARM64:
         self.emitir("")
         self.entrar_scope()
         for reg, p in zip(self.registros_de([p.tipo for p in nodo.parametros]), nodo.parametros):
-            offset = self.declarar_variable(p.nombre, p.tipo)
-            self.guardar_local(reg, offset)
+            elemento, dims = dims_arreglo(p.tipo)
+            if dims:
+                # parametro arreglo: llega su direccion en 'reg' y se copia al frame (paso por valor)
+                total = prod(dims)
+                offset = self.reservar(total * BYTES_ELEMENTO)
+                self.comentario(f"parametro {p.nombre}: {p.tipo} (copia de {total} elementos)")
+                self.copiar_a_local(reg, offset, total)
+                self.registrar_variable(p.nombre, p.tipo, offset)
+            else:
+                offset = self.declarar_variable(p.nombre, p.tipo)
+                self.guardar_local(reg, offset)
         nodo.cuerpo.aceptar(self)
         self.salir_scope()
         tamano = ((self.max_offset + 15) // 16) * 16
@@ -344,6 +353,25 @@ class GeneradorARM64:
         else:
             raise NotImplementedError("usar este arreglo como valor: guardelo primero en una variable")
 
+    def copiar_a_local(self, reg_origen, offset_destino, total):
+        """Copia 'total' palabras desde la direccion en reg_origen hasta el slot local
+        (usa solo x9-x13, para no pisar los registros de parametros que faltan)."""
+        self.direccion_local("x10", offset_destino)
+        self.emitir(f"mov x11, {reg_origen}")
+        self.cargar_inmediato("x12", total)
+        ciclo = self.nueva_etiqueta("copia")
+        self.etiqueta(ciclo)
+        self.emitir("ldr x13, [x11], #8")
+        self.emitir("str x13, [x10], #8")
+        self.emitir("subs x12, x12, #1")
+        self.emitir(f"b.ne {ciclo}")
+
+    def evaluar_argumento(self, a):
+        if es_arreglo(a.tipo_resultado):
+            self.direccion_de_arreglo(a)
+        else:
+            a.aceptar(self)
+
     # ---- llamadas a funciones del usuario ----
     def registros_de(self, tipos):
         """Registro que le toca a cada parametro/argumento (AAPCS64): los enteros
@@ -351,7 +379,8 @@ class GeneradorARM64:
         regs = []
         ni = nf = 0
         for tipo in tipos:
-            if tipo not in TIPOS_ESCALARES:
+            # los arreglos viajan como una direccion (x); el que recibe copia los elementos
+            if not (es_valor(tipo) or es_arreglo(tipo)):
                 raise NotImplementedError(f"parametros/argumentos de tipo {tipo}: siguiente rebanada")
             if tipo == "f64":
                 regs.append(f"d{nf}")
@@ -393,7 +422,7 @@ class GeneradorARM64:
         regs = self.registros_de([a.tipo_resultado for a in nodo.argumentos])
         self.comentario(f"llamada a {nodo.nombre}")
         for a, reg in zip(nodo.argumentos, regs):
-            a.aceptar(self)
+            self.evaluar_argumento(a)
             origen = "d0" if reg.startswith("d") else "x0"
             self.emitir(f"str {origen}, [sp, #-16]!    // apilar argumento")
         for reg in reversed(regs):
@@ -439,9 +468,15 @@ class GeneradorARM64:
             else:
                 self.emitir("mov x0, #0")
             valores = [None] * total
+        elif isinstance(nodo.valor_inicial, (Identificador, AccesoIndice)):
+            # let b = a;  -> copia de todos los elementos (los arreglos se pasan por valor)
+            self.direccion_de_arreglo(nodo.valor_inicial)
+            self.copiar_a_local("x0", offset, total)
+            self.registrar_variable(nodo.nombre, tipo, offset)
+            return
         else:
             if not isinstance(nodo.valor_inicial, Arreglo):
-                raise NotImplementedError("inicializar un arreglo con algo que no es un literal: siguiente rebanada")
+                raise NotImplementedError("inicializar un arreglo con algo que no es un literal ni una variable: siguiente rebanada")
             valores = hojas_arreglo(nodo.valor_inicial)
             if len(valores) != total:
                 raise RuntimeError("el literal no coincide con las dimensiones declaradas")
@@ -1005,7 +1040,7 @@ class GeneradorARM64:
 
     def visitar_Match(self, nodo):
         t = nodo.expresion.tipo_resultado
-        if t not in ENTEROS:
+        if t not in ENTEROS and t != "String":
             raise NotImplementedError(f"match sobre {t}: siguiente rebanada")
         fin = self.nueva_etiqueta("match_fin")
         self.comentario("match")
@@ -1025,9 +1060,16 @@ class GeneradorARM64:
                     raise NotImplementedError("patron de otro tipo: siguiente rebanada")
                 siguiente = self.nueva_etiqueta("match_sig")
                 caso.patron.aceptar(self)
-                self.cargar_local("x1", offset)
-                self.emitir("cmp x1, x0")
-                self.emitir(f"b.ne {siguiente}")
+                if t == "String":
+                    self.emitir("mov x1, x0")
+                    self.cargar_local("x0", offset)
+                    self.usar("str_cmp")
+                    self.emitir("bl str_cmp")
+                    self.emitir(f"cbnz x0, {siguiente}")
+                else:
+                    self.cargar_local("x1", offset)
+                    self.emitir("cmp x1, x0")
+                    self.emitir(f"b.ne {siguiente}")
                 caso.bloque.aceptar(self)
                 self.emitir(f"b {fin}")
                 self.etiqueta(siguiente)
