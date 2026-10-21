@@ -326,7 +326,7 @@ class GeneradorARM64:
     def visitar_Return(self, nodo):
         self.comentario("return")
         if nodo.valor is not None:
-            if nodo.valor.tipo_resultado not in TIPOS_ESCALARES:
+            if not es_valor(nodo.valor.tipo_resultado):
                 raise NotImplementedError(f"retornar {nodo.valor.tipo_resultado}: siguiente rebanada")
             nodo.valor.aceptar(self)      # el valor queda en x0 (o en d0 si es f64)
         self.emitir(f"b {self.etiqueta_retorno}")
@@ -410,7 +410,7 @@ class GeneradorARM64:
         if dims:
             self.declarar_arreglo(nodo, tipo, elemento, dims)
             return
-        if tipo not in TIPOS_ESCALARES:
+        if not es_valor(tipo):
             raise NotImplementedError(f"variables de tipo {tipo}: siguiente rebanada")
         self.comentario(f"let {'mut ' if nodo.mutable else ''}{nodo.nombre}: {tipo}")
         reg = "d0" if tipo == "f64" else "x0"
@@ -459,7 +459,7 @@ class GeneradorARM64:
         op = nodo.operador
         if isinstance(nodo.destino, Identificador):
             offset, tipo = self.buscar_variable(nodo.destino.nombre)
-            if tipo not in TIPOS_ESCALARES:
+            if not es_valor(tipo):
                 raise NotImplementedError(f"asignar a una variable de tipo {tipo}: siguiente rebanada")
             self.comentario(f"{nodo.destino.nombre} {op} ...")
             if tipo == "f64":
@@ -555,9 +555,10 @@ class GeneradorARM64:
 
     def visitar_Identificador(self, nodo):
         offset, tipo = self.buscar_variable(nodo.nombre)
-        if tipo not in TIPOS_ESCALARES:
-            raise NotImplementedError(f"usar '{nodo.nombre}' ({tipo}) como valor: siguiente rebanada")
+        if not es_valor(tipo):
+            raise NotImplementedError(f"usar '{nodo.nombre}' ({tipo}) como valor: use sus elementos o imprimalo con println!")
         self.cargar_local("d0" if tipo == "f64" else "x0", offset, nodo.nombre)
+
 
     def operar(self, op):
         """x0 = x0 (op) x1, con resultado recortado a i32."""
@@ -735,6 +736,8 @@ class GeneradorARM64:
         Row-major: indice_lineal = ((i1 * D2) + i2) * D3 + i3 ...
         direccion  = base + indice_lineal * 8"""
         base, indices = self.aplanar_acceso(nodo)
+        if es_slice(base.tipo_resultado):
+            return self.direccion_en_slice(base, indices)
         if not isinstance(base, Identificador):
             raise NotImplementedError("indexar algo que no es una variable: siguiente rebanada")
         offset, tipo = self.buscar_variable(base.nombre)
@@ -760,6 +763,70 @@ class GeneradorARM64:
         self.emitir("add x0, x1, x0")
         return elemento, restantes
 
+    def direccion_en_slice(self, base, indices):
+        """x0 = direccion de slice[i]. El slice es un puntero a [longitud][datos]."""
+        if len(indices) != 1:
+            raise NotImplementedError("slices de varias dimensiones: siguiente rebanada")
+        elemento = base.tipo_resultado[2:-1]
+        self.comentario("direccion de slice[i] (con verificacion de limites)")
+        base.aceptar(self)                          # x0 = descriptor
+        self.emitir("str x0, [sp, #-16]!    // apilar descriptor del slice")
+        indices[0].aceptar(self)                    # x0 = indice
+        self.emitir("ldr x1, [sp], #16      // x1 = descriptor")
+        self.emitir("ldr x2, [x1]           // x2 = longitud")
+        self.emitir("cmp x0, x2")
+        self.emitir("b.hs rt_indice         // sin signo: tambien atrapa los negativos")
+        self.usar("rt_indice")
+        self.emitir("ldr x3, [x1, #8]       // x3 = direccion del primer elemento")
+        self.emitir("add x0, x3, x0, lsl #3")
+        return elemento, []
+
+    def visitar_Slice(self, nodo):
+        """&arreglo[a..b]  ->  descriptor [longitud][direccion] en el heap (sin copiar elementos)."""
+        tipo_base = nodo.arreglo.tipo_resultado
+        base_es_slice = es_slice(tipo_base)
+        if base_es_slice:
+            elemento = tipo_base[2:-1]
+        else:
+            elemento, dims = dims_arreglo(tipo_base)
+            if len(dims) != 1 or not isinstance(nodo.arreglo, Identificador):
+                raise NotImplementedError("slices de matrices o de expresiones: siguiente rebanada")
+        if elemento not in TIPOS_ESCALARES:
+            raise NotImplementedError(f"slices de {elemento}: siguiente rebanada")
+        self.comentario(f"slice &[{nodo.inicio}..{nodo.fin}] (vista del arreglo, sin copiar)")
+        if base_es_slice:
+            nodo.arreglo.aceptar(self)
+            self.emitir("str x0, [sp, #-16]!    // apilar el slice original")
+        nodo.inicio.aceptar(self)
+        self.emitir("str x0, [sp, #-16]!    // apilar inicio")
+        nodo.fin.aceptar(self)
+        self.emitir("mov x1, x0             // x1 = fin")
+        self.emitir("ldr x0, [sp], #16      // x0 = inicio")
+        if base_es_slice:
+            self.emitir("ldr x4, [sp], #16      // x4 = descriptor original")
+            self.emitir("ldr x3, [x4]           // x3 = longitud")
+            self.emitir("ldr x2, [x4, #8]       // x2 = datos")
+        else:
+            offset, _ = self.buscar_variable(nodo.arreglo.nombre)
+            self.direccion_local("x2", offset)
+            self.cargar_inmediato("x3", dims[0])
+        self.usar("rt_indice")
+        self.emitir("cmp x1, x3")
+        self.emitir("b.hi rt_indice         // fin > longitud")
+        self.emitir("cmp x0, x1")
+        self.emitir("b.hi rt_indice         // inicio > fin")
+        self.emitir("stp x0, x1, [sp, #-32]!")
+        self.emitir("str x2, [sp, #16]")
+        self.emitir("mov x0, #16            // el descriptor ocupa 16 bytes")
+        self.usar("heap_alloc")
+        self.emitir("bl heap_alloc")
+        self.emitir("ldp x4, x5, [sp]")
+        self.emitir("ldr x2, [sp, #16]")
+        self.emitir("add sp, sp, #32")
+        self.emitir("sub x6, x5, x4         // longitud = fin - inicio")
+        self.emitir("str x6, [x0]")
+        self.emitir("add x2, x2, x4, lsl #3 // datos = base + inicio * 8")
+        self.emitir("str x2, [x0, #8]")
     def visitar_AccesoIndice(self, nodo):
         elemento, restantes = self.calcular_direccion(nodo)
         if restantes:
@@ -787,6 +854,15 @@ class GeneradorARM64:
             self.emitir("bl str_replace")
         else:
             raise NotImplementedError(f"String.{m}(): siguiente rebanada")
+            
+    def metodo_slice(self, nodo, tipo):
+        m = nodo.nombre
+        if m == "len":
+            self.comentario("slice.len()")
+            nodo.objeto.aceptar(self)
+            self.emitir("ldr x0, [x0]           // la longitud esta en el descriptor")
+        else:
+            raise NotImplementedError(f"metodo {m} sobre {tipo}: siguiente rebanada")
 
     def visitar_LlamadaMetodo(self, nodo):
         tipo = nodo.objeto.tipo_resultado
@@ -794,6 +870,9 @@ class GeneradorARM64:
             self.metodo_string(nodo)
             return
         elemento, dims = dims_arreglo(tipo)
+        if es_slice(tipo):
+            self.metodo_slice(nodo, tipo)
+            return
         if dims and nodo.nombre == "len":
             # los arreglos tienen tamano fijo: la longitud se conoce al compilar
             self.comentario(f"len() = {dims[0]}")

@@ -37,7 +37,7 @@ chk("error semantico (linea 3, columna 5)",
     and r["errores"][0]["linea"] == 3 and r["errores"][0]["columna"] == 5, r["errores"])
 chk("con error semantico igual hay AST", bool(r["ast_svg"]))
 
-no_soportado = src("fn main() {", "    let numeros = [1, 2, 3];", "    let parte = &numeros[0..2];", "}")
+no_soportado = src("fn main() {", "    let m = [[1, 2], [3, 4]];", "    let parte = &m[0..1];", "}")
 r = compilar(no_soportado)
 chk("construccion que el generador aun no soporta",
     (not r["ok"]) and r["fase"] == "generacion" and any(e["tipo"] == "Generacion" for e in r["errores"]), r)
