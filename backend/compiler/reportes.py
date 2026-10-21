@@ -58,7 +58,7 @@ def ast_a_dot(raiz):
         etiqueta = type(nodo).__name__
         hijos = []
         for nombre, valor in vars(nodo).items():
-            if nombre in ("linea", "columna") or valor is None:
+            if nombre in ("linea", "columna", "tipo_resultado") or valor is None:
                 continue
             if isinstance(valor, Nodo):
                 hijos.append(valor)
