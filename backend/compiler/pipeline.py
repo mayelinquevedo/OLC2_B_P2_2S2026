@@ -85,6 +85,9 @@ def _compilar(codigo):
     if interno is not None:
         errores.append({"tipo": "Interno", "linea": 0, "columna": 0,
                         "descripcion": f"Error interno del compilador: {type(interno).__name__}: {interno}"})
+    lineas = codigo.split("\n")
+    for e in errores:           # fragmento del codigo fuente donde se detecto el error
+        e["fragmento"] = lineas[e["linea"] - 1].strip() if 0 < e["linea"] <= len(lineas) else ""
     r["errores"] = errores
     r["simbolos"] = [_simbolo_a_dict(s) for s in simbolos]
     _escribir_reportes(r, errores, simbolos, ast)

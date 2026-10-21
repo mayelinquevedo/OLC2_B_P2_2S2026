@@ -32,10 +32,9 @@ def _mostrar_valor(v):
 
 
 def reporte_errores_html(errores):
-    filas = [[i + 1, e["tipo"], e["descripcion"], e["linea"], e["columna"]]
+    filas = [[i + 1, e["tipo"], e["descripcion"], e["linea"], e["columna"], e.get("fragmento", "")]
              for i, e in enumerate(errores)]
-    return _pagina("Reporte de errores", ["No", "Tipo", "Descripción", "Línea", "Columna"], filas)
-
+    return _pagina("Reporte de errores", ["No", "Tipo", "Descripción", "Línea", "Columna", "Fragmento"], filas)
 
 def reporte_simbolos_html(simbolos):
     filas = [[i + 1, s.nombre, s.categoria, s.tipo, s.ambito, s.linea, _mostrar_valor(s.valor)]
