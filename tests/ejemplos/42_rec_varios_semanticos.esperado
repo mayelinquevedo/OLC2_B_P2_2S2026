@@ -1,0 +1,8 @@
+[Semantico] Linea 4, Columna 5: No es posible modificar la variable 'edad' porque fue declarada como inmutable.
+[Semantico] Linea 6, Columna 14: La variable 'zzz' no ha sido declarada.
+[Semantico] Linea 7, Columna 18: No es posible asignar un valor de tipo String a una variable de tipo i32.
+--- salida ---
+20
+despues del error
+None
+0

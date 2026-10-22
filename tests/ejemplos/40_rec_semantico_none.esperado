@@ -1,0 +1,5 @@
+[Semantico] Linea 7, Columna 24: No es posible aplicar el operador '+' entre los tipos i32 y String.
+--- salida ---
+12.5
+50
+None

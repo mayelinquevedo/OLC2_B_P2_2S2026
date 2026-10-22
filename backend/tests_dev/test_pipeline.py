@@ -24,18 +24,30 @@ lexico = src("fn main() {", "    let total = @100;", "}")
 for vez in (1, 2):
     r = compilar(lexico)
     chk(f"error lexico en la linea 2 (intento {vez})",
-        (not r["ok"]) and any(e["tipo"] == "Lexico" and e["linea"] == 2 for e in r["errores"]), r["errores"])
+        any(e["tipo"] == "Lexico" and e["linea"] == 2 for e in r["errores"]), r["errores"])
 
 sintactico = src("fn main() {", "    let x: i32 = 10", '    println!("{}", x);', "}")
 r = compilar(sintactico)
-chk("error sintactico", (not r["ok"]) and any(e["tipo"] == "Sintactico" for e in r["errores"]), r["errores"])
+chk("error sintactico", any(e["tipo"] == "Sintactico" for e in r["errores"]), r["errores"])
+chk("tras un ';' faltante el programa igual se ejecuta", r["ok"] and r["salida"] == "10\n", r)
 
 semantico = src("fn main() {", "    let edad = 20;", "    edad = 21;", "}")
 r = compilar(semantico)
 chk("error semantico (linea 3, columna 5)",
-    (not r["ok"]) and r["errores"] and r["errores"][0]["tipo"] == "Semantico"
+    r["errores"] and r["errores"][0]["tipo"] == "Semantico"
     and r["errores"][0]["linea"] == 3 and r["errores"][0]["columna"] == 5, r["errores"])
 chk("con error semantico igual hay AST", bool(r["ast_svg"]))
+chk("con error semantico el programa igual se ejecuta", r["ok"] and r["fase"] == "ejecucion", r)
+
+# la expresion invalida vale None y el resto del programa sigue (ejemplo del enunciado)
+recuperacion = src("fn main() {", "    let a: i32 = 10;", '    let nombre = String::from("Ana");',
+                   "    let r = a + nombre;", "    println!(a * 5);", "    println!(r);", "}")
+r = compilar(recuperacion)
+chk("expresion invalida imprime None y el programa sigue", r["ok"] and r["salida"] == "50\nNone\n" and len(r["errores"]) == 1, r)
+
+sin_main = src("fn otra() {", '    println!("x");', "}")
+r = compilar(sin_main)
+chk("sin main el error es critico y no se ejecuta", (not r["ok"]) and bool(r["errores"]), r)
 
 no_soportado = src("fn main() {", "    let m = [[1, 2], [3, 4]];", "    let parte = &m[0..1];", "}")
 r = compilar(no_soportado)

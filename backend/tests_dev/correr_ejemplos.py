@@ -4,8 +4,9 @@ Uso (desde backend/):
     python3 -m tests_dev.correr_ejemplos            # compara
     python3 -m tests_dev.correr_ejemplos --generar  # (re)escribe los .esperado con la salida actual
 
-Cada .esperado contiene la salida del programa, o las lineas
-"[Tipo] Linea L, Columna C: descripcion" si el programa debe producir errores.
+Cada .esperado contiene la salida del programa; si el programa tiene errores contiene las lineas
+"[Tipo] Linea L, Columna C: descripcion" y, tras "--- salida ---", lo que imprimio el resto del programa
+(el compilador se recupera de los errores y sigue ejecutando).
 """
 import glob
 import os
@@ -19,10 +20,15 @@ CARPETA = os.path.join(os.path.dirname(RAIZ), "tests", "ejemplos")
 
 
 def resultado(codigo):
+    """Errores (si los hay) y, si el programa pudo ejecutarse, su salida (recuperacion ante errores)."""
     r = compilar(codigo)
+    texto = ""
     if r["errores"]:
-        return "\n".join(f"[{e['tipo']}] Linea {e['linea']}, Columna {e['columna']}: {e['descripcion']}"
-                         for e in r["errores"]) + "\n"
+        texto = "\n".join(f"[{e['tipo']}] Linea {e['linea']}, Columna {e['columna']}: {e['descripcion']}"
+                          for e in r["errores"]) + "\n"
+        if r["ok"]:
+            texto += "--- salida ---\n" + r["salida"]
+        return texto
     return r["salida"]
 
 
