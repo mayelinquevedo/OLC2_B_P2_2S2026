@@ -1,13 +1,15 @@
 """Orquesta todo el compilador: analisis lexico/sintactico -> semantico -> ARM64 -> QEMU.
 """
+import copy
 import os
 import shutil
 import tempfile
 import threading
 
 from compiler.lexer.lexer import lexer
-from compiler.parser.parser import parser
+from compiler.parser.parser import parsear
 from compiler.semantic.analizador import AnalizadorSemantico
+from compiler.recuperacion import recuperar, es_critico
 from compiler.codegen.generador import GeneradorARM64
 from compiler.errors import limpiar_errores, obtener_errores
 from compiler import reportes
@@ -30,7 +32,7 @@ def _valor_texto(v):
 
 
 def _simbolo_a_dict(s):
-    return {"nombre": s.nombre, "categoria": s.categoria, "tipo": s.tipo,
+    return {"nombre": s.nombre, "categoria": s.categoria, "tipo": s.tipo or "None",
             "ambito": s.ambito, "linea": s.linea, "valor": _valor_texto(s.valor)}
 
 
@@ -74,7 +76,7 @@ def _compilar(codigo):
     simbolos = []
     interno = None
     try:
-        ast = parser.parse(codigo, lexer=lexer)
+        ast = parsear(codigo)
         if ast is not None:
             analizador = AnalizadorSemantico()
             analizador.analizar(ast)
@@ -92,12 +94,17 @@ def _compilar(codigo):
     r["simbolos"] = [_simbolo_a_dict(s) for s in simbolos]
     _escribir_reportes(r, errores, simbolos, ast)
 
-    if errores:
+    if ast is None:
+        r["mensaje"] = (f"Se encontraron {len(errores)} error(es)" if errores
+                        else "No se pudo construir el arbol de sintaxis")
+        return r
+    if errores and (interno is not None or es_critico(ast)):
+        # error critico (por ejemplo, no hay una unica 'main'): no se puede continuar de forma segura
         r["mensaje"] = f"Se encontraron {len(errores)} error(es)"
         return r
-    if ast is None:
-        r["mensaje"] = "No se pudo construir el arbol de sintaxis"
-        return r
+    if errores:
+        # recuperacion: los errores se reportan, pero el resto del programa se compila y se ejecuta
+        ast = recuperar(copy.deepcopy(ast))
 
     # ---- generacion de codigo ARM64 ----
     r["fase"] = "generacion"
@@ -127,6 +134,8 @@ def _compilar(codigo):
     salida = res["salida"]
     if len(salida) > LIMITE_SALIDA:
         salida = salida[:LIMITE_SALIDA] + "\n... (salida truncada)"
-    r.update(ok=True, fase="ejecucion", mensaje="Compilación exitosa", salida=salida,
+    mensaje = ("Compilación exitosa" if not errores else
+               f"Se encontraron {len(errores)} error(es); se ejecutó el resto del programa")
+    r.update(ok=True, fase="ejecucion", mensaje=mensaje, salida=salida,
              codigo_salida=res["codigo"], tiempo=res["tiempo"])
     return r

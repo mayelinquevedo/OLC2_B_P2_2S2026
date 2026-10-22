@@ -1,4 +1,5 @@
 import ply.yacc as yacc
+from ply.lex import LexToken
 from compiler.lexer.lexer import tokens
 from compiler.errors import agregar_error, encontrar_columna
 from compiler.ast.nodos import (
@@ -517,6 +518,54 @@ def _esperados():
         return set()
 
 
+class LexerConCola:
+    """Envuelve al lexer de PLY para poder devolverle tokens al parser (recuperacion de errores)."""
+    def __init__(self, lexer):
+        self._lexer = lexer
+        self.cola = []
+
+    def input(self, datos):
+        self._lexer.input(datos)
+        self.cola = []
+
+    def token(self):
+        return self.cola.pop(0) if self.cola else self._lexer.token()
+
+    def __getattr__(self, nombre):            # lexdata, lineno, lexpos, ...
+        return getattr(self._lexer, nombre)
+
+
+_envoltorio = None          # el LexerConCola de la ultima llamada a parsear()
+_insertados = set()         # (lexpos, tipo) ya insertados, para no entrar en un ciclo
+MAX_INSERCIONES = 100
+
+
+def _token_virtual(tipo, linea, lexpos):
+    tok = LexToken()
+    tok.type = tipo
+    tok.value = SIMBOLOS[tipo]
+    tok.lineno = linea
+    tok.lexpos = lexpos
+    tok.lexer = _envoltorio
+    return tok
+
+
+def _recuperar_insertando(p, cerrador, linea, esperados_simbolo):
+    """Si falta un ';', ')', ']' o '}' evidente, se inserta como token virtual y se continua con el token
+    que fallo. Asi no se pierde la sentencia completa (panico) y el programa sigue siendo valido."""
+    if _envoltorio is None or len(_insertados) >= MAX_INSERCIONES:
+        return None
+    clave = ((p.lexpos if p is not None else -1 - len(_insertados)), cerrador)
+    if clave in _insertados:
+        return None
+    _insertados.add(clave)
+    tok = _token_virtual(cerrador, linea, p.lexpos if p is not None else len(_envoltorio.lexdata))
+    if p is not None:
+        _envoltorio.cola.insert(0, p)
+    parser.errok()
+    return tok
+
+
 def p_error(p):
     texto = lexer_actual().lexdata if p is None else p.lexer.lexdata
     esperados = _esperados()
@@ -526,22 +575,42 @@ def p_error(p):
         linea, columna = _fin_del_token_anterior(texto, len(texto))
         if cerrador:
             agregar_error("Sintactico", f"Se esperaba '{SIMBOLOS[cerrador]}'.", linea, columna)
-        else:
-            agregar_error("Sintactico", "Fin de archivo inesperado.", linea, columna)
-        return
+            return _recuperar_insertando(None, cerrador, linea, SIMBOLOS[cerrador])
+        agregar_error("Sintactico", "Fin de archivo inesperado.", linea, columna)
+        return None
 
     prev_linea, prev_col = _fin_del_token_anterior(texto, p.lexpos)
     en_otra_linea = prev_linea != p.lineno
-    if cerrador and (en_otra_linea or cerrador == 'PUNTO_COMA'):
+    puede_insertar = bool(cerrador) and (
+        (cerrador == 'PUNTO_COMA' and (en_otra_linea or p.type == 'LLAVE_DER'))
+        or (cerrador in ('PAREN_DER', 'CORCH_DER') and p.type in ('PUNTO_COMA', 'LLAVE_IZQ', 'LLAVE_DER'))
+        or (cerrador == 'LLAVE_DER' and p.type == 'FN'))
+    if cerrador and (en_otra_linea or cerrador == 'PUNTO_COMA' or puede_insertar):
         # falta un ';' (o un cierre): se senala justo despues del ultimo token valido
         linea, columna = (prev_linea, prev_col) if en_otra_linea else (p.lineno, encontrar_columna(texto, p.lexpos))
         agregar_error("Sintactico", f"Se esperaba '{SIMBOLOS[cerrador]}'.", linea, columna)
+        if puede_insertar:
+            return _recuperar_insertando(p, cerrador, prev_linea, SIMBOLOS[cerrador])
     else:
         agregar_error("Sintactico", f"Error de sintaxis cerca de '{p.value}'",
                       p.lineno, encontrar_columna(texto, p.lexpos))
+    return None
 
 
 def lexer_actual():
     from compiler.lexer.lexer import lexer
     return lexer
 parser = yacc.yacc()
+
+
+def parsear(codigo):
+    """Analiza 'codigo' con recuperacion ante errores sintacticos (tokens virtuales ; ) ] })."""
+    global _envoltorio
+    from compiler.lexer.lexer import lexer
+    lexer.lineno = 1
+    _insertados.clear()
+    _envoltorio = LexerConCola(lexer)
+    try:
+        return parser.parse(codigo, lexer=_envoltorio)
+    finally:
+        _envoltorio = None

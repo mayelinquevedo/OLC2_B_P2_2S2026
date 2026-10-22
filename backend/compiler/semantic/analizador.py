@@ -52,6 +52,7 @@ class AnalizadorSemantico:
         self.bucles = []
 
     def error(self, nodo, mensaje):
+        nodo.con_error = True       # la recuperacion de errores omite o neutraliza este nodo
         agregar_error("Semantico", mensaje, nodo.linea, nodo.columna)
 
     def analizar(self, programa):

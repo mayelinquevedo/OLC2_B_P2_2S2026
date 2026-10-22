@@ -45,7 +45,16 @@ function construirConsola(r) {
     L.push({ t: `Error en la fase de ${r.fase}:`, c: "error" });
     L.push({ t: r.mensaje, c: "texto" });
   } else {
-    L.push({ t: "Compilación exitosa.", c: "ok" });
+    if (errores.length > 0) {
+      // recuperacion ante errores: se reportan, pero el resto del programa igual se ejecuta
+      L.push({ t: `Se encontraron ${errores.length} error(es); se ejecutó el resto del programa.`, c: "error" });
+      errores.forEach((e) => {
+        L.push({ t: `[Error ${nombreTipo(e.tipo)}] Línea ${e.linea}, Columna ${e.columna}`, c: "error" });
+        L.push({ t: e.descripcion, c: "texto" });
+      });
+    } else {
+      L.push({ t: "Compilación exitosa.", c: "ok" });
+    }
     L.push({ t: "── Programa en ejecución ──", c: "sep" });
     const salida = (r.salida || "").replace(/\n$/, "");
     if (r.salida) salida.split("\n").forEach((l) => L.push({ t: l, c: "salida" }));

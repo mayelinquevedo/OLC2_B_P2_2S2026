@@ -26,6 +26,17 @@ class Literal(Nodo):
     def __repr__(self):
         return f"Literal({self.valor}: {self.tipo})"
 
+class ErrorExpr(Nodo):
+    """Valor invalido: reemplaza a una expresion que tuvo un error semantico.
+    Al ejecutar vale 0 y al imprimirse muestra 'None' (recuperacion ante errores)."""
+    def __init__(self, linea=0, columna=0):
+        super().__init__(linea, columna)
+        self.tipo_resultado = 'None'
+
+    def __repr__(self):
+        return "ErrorExpr()"
+
+
 class Identificador(Nodo): 
     """Referencia a una variable por su nombre."""
     def __init__(self, nombre, linea=0, columna=0):

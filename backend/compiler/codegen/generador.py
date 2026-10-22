@@ -588,6 +588,10 @@ class GeneradorARM64:
         else:
             raise NotImplementedError(f"literales {nodo.tipo}: siguiente rebanada")
 
+    def visitar_ErrorExpr(self, nodo):
+        self.comentario("expresion invalida (error ya reportado): vale 0 / None")
+        self.emitir("mov x0, #0")
+
     def visitar_Identificador(self, nodo):
         offset, tipo = self.buscar_variable(nodo.nombre)
         if not es_valor(tipo):
@@ -1120,6 +1124,9 @@ class GeneradorARM64:
         """Evalua arg y lo imprime segun su tipo (sin salto de linea).
         Los arreglos y slices siempre se muestran como [a, b, c]."""
         tipo = arg.tipo_resultado
+        if tipo == "None":                       # valor invalido (recuperacion ante errores)
+            self.escribir_texto("None")
+            return
         if es_slice(tipo):
             arg.aceptar(self)
             self.imprimir_slice(tipo[2:-1])
