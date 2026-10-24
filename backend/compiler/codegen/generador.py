@@ -1,7 +1,7 @@
 import struct
 from math import prod
 
-from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal
+from compiler.ast.nodos import Identificador, AccesoIndice, Arreglo, Literal, LlamadaFuncion
 from compiler.codegen.rutinas import (RUTINAS, DEPENDENCIAS, MENSAJES_ERROR,
                                       ORDEN_RUTINAS, HEAP_BYTES)
 from compiler.formato import partir_formato
@@ -300,6 +300,12 @@ class GeneradorARM64:
         pos_reserva = len(self.texto)
         self.emitir("")
         self.entrar_scope()
+        self.sret_offset = None
+        if es_arreglo(nodo.tipo_retorno):
+            # retorno de un arreglo: quien llama reserva el espacio y manda su direccion en x8
+            self.sret_offset = self.reservar(BYTES_ELEMENTO)
+            self.comentario(f"retorna {nodo.tipo_retorno}: la direccion destino llega en x8")
+            self.guardar_local("x8", self.sret_offset)
         for reg, p in zip(self.registros_de([p.tipo for p in nodo.parametros]), nodo.parametros):
             elemento, dims = dims_arreglo(p.tipo)
             if dims:
@@ -335,11 +341,36 @@ class GeneradorARM64:
     def visitar_Return(self, nodo):
         self.comentario("return")
         if nodo.valor is not None:
-            if not es_valor(nodo.valor.tipo_resultado):
-                raise NotImplementedError(f"retornar {nodo.valor.tipo_resultado}: siguiente rebanada")
+            tipo_valor = nodo.valor.tipo_resultado
+            if es_arreglo(tipo_valor):
+                if self.sret_offset is None:
+                    raise RuntimeError("return de un arreglo en una funcion que no lo declara")
+                total = prod(dims_arreglo(tipo_valor)[1])
+                self.comentario(f"return de {tipo_valor}: copiar {total} elementos al destino")
+                self.direccion_de_arreglo(nodo.valor)             # x0 = origen
+                self.cargar_local("x1", self.sret_offset)         # x1 = destino (espacio de quien llama)
+                self.copiar_memoria("x1", "x0", total)
+                self.emitir("mov x0, x1                 // se devuelve la direccion del resultado")
+                self.emitir(f"b {self.etiqueta_retorno}")
+                return
+            if not es_valor(tipo_valor):
+                raise NotImplementedError(f"retornar {tipo_valor}: siguiente rebanada")
             nodo.valor.aceptar(self)      # el valor queda en x0 (o en d0 si es f64)
         self.emitir(f"b {self.etiqueta_retorno}")
 
+
+    def copiar_memoria(self, reg_destino, reg_origen, total):
+        """Copia 'total' palabras de [reg_origen] a [reg_destino]. Conserva ambos registros
+        (usa solo x10-x13)."""
+        self.emitir(f"mov x10, {reg_destino}")
+        self.emitir(f"mov x11, {reg_origen}")
+        self.cargar_inmediato("x12", total)
+        ciclo = self.nueva_etiqueta("copia")
+        self.etiqueta(ciclo)
+        self.emitir("ldr x13, [x11], #8")
+        self.emitir("str x13, [x10], #8")
+        self.emitir("subs x12, x12, #1")
+        self.emitir(f"b.ne {ciclo}")
 
     def direccion_de_arreglo(self, expr):
         """Deja en x0 la direccion del primer elemento de un arreglo (variable o fila de una matriz)."""
@@ -350,6 +381,20 @@ class GeneradorARM64:
             _, restantes = self.calcular_direccion(expr)
             if not restantes:
                 raise RuntimeError("se esperaba un arreglo y se obtuvo un elemento")
+        elif isinstance(expr, LlamadaFuncion):
+            expr.aceptar(self)          # la funcion devuelve en x0 la direccion del arreglo resultado
+        elif isinstance(expr, Arreglo):
+            # literal usado como valor (por ejemplo un argumento): se guarda en un temporal del frame
+            elemento, dims = dims_arreglo(expr.tipo_resultado)
+            if elemento not in TIPOS_ESCALARES:
+                raise NotImplementedError(f"literales de arreglos de {elemento}: siguiente rebanada")
+            total = prod(dims)
+            offset = self.reservar(total * BYTES_ELEMENTO)
+            self.comentario(f"literal {expr.tipo_resultado} guardado en un temporal ({total} elementos)")
+            for k, hoja in enumerate(hojas_arreglo(expr)):
+                hoja.aceptar(self)
+                self.guardar_local("d0" if hoja.tipo_resultado == "f64" else "x0", offset - k * BYTES_ELEMENTO)
+            self.direccion_local("x0", offset)
         else:
             raise NotImplementedError("usar este arreglo como valor: guardelo primero en una variable")
 
@@ -427,6 +472,11 @@ class GeneradorARM64:
             self.emitir(f"str {origen}, [sp, #-16]!    // apilar argumento")
         for reg in reversed(regs):
             self.emitir(f"ldr {reg}, [sp], #16")
+        if es_arreglo(nodo.tipo_resultado):
+            # la funcion retorna un arreglo: se reserva el espacio del resultado y se manda en x8
+            total = prod(dims_arreglo(nodo.tipo_resultado)[1])
+            destino = self.reservar(total * BYTES_ELEMENTO)
+            self.direccion_local("x8", destino)
         self.emitir(f"bl fn_{nodo.nombre}")
 
     # ---- declaraciones y asignaciones ----
@@ -468,7 +518,7 @@ class GeneradorARM64:
             else:
                 self.emitir("mov x0, #0")
             valores = [None] * total
-        elif isinstance(nodo.valor_inicial, (Identificador, AccesoIndice)):
+        elif isinstance(nodo.valor_inicial, (Identificador, AccesoIndice, LlamadaFuncion)):
             # let b = a;  -> copia de todos los elementos (los arreglos se pasan por valor)
             self.direccion_de_arreglo(nodo.valor_inicial)
             self.copiar_a_local("x0", offset, total)
